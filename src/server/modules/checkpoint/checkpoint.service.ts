@@ -72,6 +72,35 @@ export async function decideCheckpoint(
     }
   }
 
+  if (
+    checkpoint.type === "outreach_send" &&
+    checkpoint.entityType === "outreach_message" &&
+    checkpoint.entityId
+  ) {
+    const { onOutreachApprovalDecided } = await import(
+      "@/server/modules/outreach/outreach.service"
+    );
+    await onOutreachApprovalDecided(ctx, checkpoint.entityId, decision);
+  }
+
+  if (checkpoint.type === "contract" && checkpoint.entityType === "contract" && checkpoint.entityId) {
+    const { onContractApprovalDecided } = await import(
+      "@/server/modules/contract/contract.service"
+    );
+    await onContractApprovalDecided(ctx, checkpoint.entityId, decision);
+  }
+
+  if (
+    checkpoint.type === "payment" &&
+    checkpoint.entityType === "payment_record" &&
+    checkpoint.entityId
+  ) {
+    const { onPaymentApprovalDecided } = await import(
+      "@/server/modules/contract/contract.service"
+    );
+    await onPaymentApprovalDecided(ctx, checkpoint.entityId, decision);
+  }
+
   const updated = await checkpointRepository.findById(ctx, id);
   const names = await getUserNames(updated?.decidedBy ? [updated.decidedBy] : []);
   return toDto(updated!, names);

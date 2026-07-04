@@ -80,5 +80,8 @@ export const IMPLEMENTED_ROUTES = new Set([
   "/brands",
   "/creators",
   "/campaigns",
+  "/outreach",
+  "/contracts",
+  "/ai-runs",
   "/approvals",
 ]);

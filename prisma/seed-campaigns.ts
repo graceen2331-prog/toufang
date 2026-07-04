@@ -8,7 +8,8 @@ export async function seedCampaigns(
 ): Promise<void> {
   const existing = await prisma.campaign.count({ where: { tenantId, deletedAt: null } });
   if (existing > 0) {
-    console.log(`[seed] Campaign 数据已存在（${existing} 个），跳过`);
+    console.log(`[seed] Campaign 数据已存在（${existing} 个），补齐 W6 外联/合同演示数据`);
+    await seedOutreachContracts(prisma, tenantId, createdBy);
     return;
   }
 
@@ -169,5 +170,229 @@ export async function seedCampaigns(
     ],
   });
 
+  await seedOutreachContracts(prisma, tenantId, createdBy);
+
   console.log("[seed] 已写入 2 个演示 Campaign（含达人管道/任务/预算/审批项）");
+}
+
+async function seedOutreachContracts(
+  prisma: PrismaClient,
+  tenantId: string,
+  createdBy: string,
+): Promise<void> {
+  const campaign = await prisma.campaign.findFirst({
+    where: { tenantId, name: "焕亮维C精华 双十一种草战役", deletedAt: null },
+  });
+  if (!campaign) return;
+
+  const campaignCreators = await prisma.campaignCreator.findMany({
+    where: {
+      tenantId,
+      campaignId: campaign.id,
+      deletedAt: null,
+      status: { in: ["contacted", "replied", "negotiating", "confirmed", "active"] },
+    },
+    include: { creator: { select: { displayName: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+
+  for (const cc of campaignCreators) {
+    let thread = await prisma.outreachThread.findFirst({
+      where: { tenantId, campaignCreatorId: cc.id, deletedAt: null },
+    });
+    if (!thread) {
+      thread = await prisma.outreachThread.create({
+        data: {
+          tenantId,
+          campaignCreatorId: cc.id,
+          channel: "email",
+          status:
+            cc.status === "active" || cc.status === "confirmed"
+              ? "closed_won"
+              : cc.status === "negotiating"
+                ? "negotiating"
+                : cc.status === "replied"
+                  ? "replied"
+                  : "open",
+          subject: `GlowLab 双十一合作邀约 - ${cc.creator.displayName}`,
+          lastMessageAt: new Date(Date.now() - 2 * 86400_000),
+          createdBy,
+        },
+      });
+    }
+
+    const messageCount = await prisma.outreachMessage.count({
+      where: { tenantId, threadId: thread.id, deletedAt: null },
+    });
+    if (messageCount === 0) {
+      await prisma.outreachMessage.create({
+        data: {
+          tenantId,
+          threadId: thread.id,
+          direction: "outbound",
+          status: "sent",
+          approvalStatus: "approved",
+          subject: thread.subject,
+          body: `你好 ${cc.creator.displayName}，我们是光泽实验室 GlowLab，想邀请你参与焕亮维C精华双十一种草合作。期待结合你的真实护肤体验，共创一条内容。`,
+          sentAt: new Date(Date.now() - 4 * 86400_000),
+          createdBy,
+        },
+      });
+
+      if (["replied", "negotiating", "confirmed", "active"].includes(cc.status)) {
+        await prisma.outreachMessage.create({
+          data: {
+            tenantId,
+            threadId: thread.id,
+            direction: "inbound",
+            status: "replied",
+            approvalStatus: "not_required",
+            subject: "Re: 合作邀约",
+            body: `有兴趣了解，档期可以配合。我的报价是 ¥${((cc.quotedPriceCents ?? 4_000_000) / 100).toLocaleString("zh-CN")}，需要确认产品试用周期和内容授权范围。`,
+            replyIntent: cc.status === "replied" ? "need_info" : "negotiate",
+            createdBy,
+          },
+        });
+      }
+    }
+
+    if (["negotiating", "confirmed", "active"].includes(cc.status)) {
+      const negotiation = await prisma.negotiationRecord.findFirst({
+        where: { tenantId, threadId: thread.id, deletedAt: null },
+      });
+      if (!negotiation) {
+        await prisma.negotiationRecord.create({
+          data: {
+            tenantId,
+            threadId: thread.id,
+            status: cc.status === "negotiating" ? "negotiating" : "agreed",
+            quotedPriceCents: cc.quotedPriceCents,
+            counterPriceCents: cc.quotedPriceCents
+              ? Math.round(cc.quotedPriceCents * 0.9)
+              : 3_600_000,
+            agreedPriceCents: cc.agreedPriceCents,
+            pricingAnalysis: {
+              summary: "报价处于腰部达人合理区间，建议用档期资源和二次投流权益换取小幅降价。",
+            },
+            strategy: {
+              items: ["先确认内容授权周期", "用样品体验周期换取更稳定的发布时间", "保留二次投流白名单选项"],
+              intent: cc.status === "negotiating" ? "negotiate" : "interested",
+              intent_summary: "达人对合作有明确兴趣，主要待确认报价和授权范围。",
+              reply_draft: "我们可以接受核心报价方向，希望授权周期控制在 30 天，并将交付物明确到短视频 1 条。",
+              required_approvals: cc.status === "negotiating" ? ["manager"] : [],
+              risk_notes: [],
+            },
+            agreedTerms:
+              cc.status === "negotiating"
+                ? {}
+                : {
+                    deliverables: ["短视频 1 条", "图文种草 1 篇"],
+                    usage_rights: "品牌官方账号 30 天二次分发授权",
+                    payment_terms: "内容验收通过后 7 个工作日付款",
+                  },
+            createdBy,
+          },
+        });
+      }
+    }
+
+    if (["confirmed", "active"].includes(cc.status)) {
+      let contract = await prisma.contract.findFirst({
+        where: { tenantId, campaignCreatorId: cc.id, deletedAt: null },
+      });
+      if (!contract) {
+        contract = await prisma.contract.create({
+          data: {
+            tenantId,
+            campaignCreatorId: cc.id,
+            // 注意：id 为 UUIDv7（时间前缀），取末段随机部分保证 contract_number 唯一
+            contractNumber: `HT-SEED-${cc.id.slice(-12).toUpperCase()}`,
+            status: cc.status === "active" ? "signed" : "in_review",
+            amountCents: cc.agreedPriceCents ?? 4_500_000,
+            currency: cc.currency,
+            usageRights: { text: "品牌官方账号 30 天二次分发授权" },
+            exclusivityTerms: { text: "合作期内不发布直接竞品同主题内容" },
+            paymentTerms: { text: "内容验收通过后 7 个工作日付款" },
+            signedAt: cc.status === "active" ? new Date(Date.now() - 86400_000) : null,
+            createdBy,
+          },
+        });
+      }
+
+      if (contract.status === "in_review") {
+        const checkpoint = await prisma.humanCheckpoint.findFirst({
+          where: {
+            tenantId,
+            entityType: "contract",
+            entityId: contract.id,
+            status: "pending",
+          },
+        });
+        if (!checkpoint) {
+          await prisma.humanCheckpoint.create({
+            data: {
+              tenantId,
+              type: "contract",
+              status: "pending",
+              title: `合同审批：${cc.creator.displayName}`,
+              summary: `合同 ${contract.contractNumber}，金额 ¥${(contract.amountCents / 100).toLocaleString("zh-CN")}`,
+              entityType: "contract",
+              entityId: contract.id,
+              payload: { contract_number: contract.contractNumber, amount_cents: contract.amountCents },
+              priority: "high",
+              assigneeRole: "manager",
+              createdBy,
+            },
+          });
+        }
+      }
+
+      if (cc.status === "active") {
+        let payment = await prisma.paymentRecord.findFirst({
+          where: { tenantId, contractId: contract.id, deletedAt: null },
+        });
+        if (!payment) {
+          payment = await prisma.paymentRecord.create({
+            data: {
+              tenantId,
+              contractId: contract.id,
+              status: "pending_approval",
+              amountCents: Math.round(contract.amountCents * 0.5),
+              currency: contract.currency,
+              method: "bank",
+              invoice: { text: "首付款，待财务审批" },
+              createdBy,
+            },
+          });
+        }
+        const paymentCheckpoint = await prisma.humanCheckpoint.findFirst({
+          where: {
+            tenantId,
+            entityType: "payment_record",
+            entityId: payment.id,
+            status: "pending",
+          },
+        });
+        if (!paymentCheckpoint) {
+          await prisma.humanCheckpoint.create({
+            data: {
+              tenantId,
+              type: "payment",
+              status: "pending",
+              title: `付款审批：${cc.creator.displayName}`,
+              summary: `首付款 ¥${(payment.amountCents / 100).toLocaleString("zh-CN")}`,
+              entityType: "payment_record",
+              entityId: payment.id,
+              payload: { contract_id: contract.id, amount_cents: payment.amountCents },
+              priority: "high",
+              assigneeRole: "finance",
+              createdBy,
+            },
+          });
+        }
+      }
+    }
+  }
+
+  console.log("[seed] 已补齐 W6 外联/谈判/合同/付款演示数据");
 }

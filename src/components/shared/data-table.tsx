@@ -30,6 +30,8 @@ interface DataTableProps<TData> {
 
 /** 通用数据表：TanStack Table 核心 + 游标分页页脚 */
 export function DataTable<TData>({ columns, data, onRowClick, pagination }: DataTableProps<TData>) {
+  // TanStack Table 返回的函数由库内部管理，React Compiler 不能安全 memoize。
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,

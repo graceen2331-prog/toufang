@@ -1,0 +1,69 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const pendingCheckpoint = {
+  id: "checkpoint-1",
+  tenantId: "org-1",
+  workflowRunId: null,
+  type: "outreach_send",
+  status: "pending",
+  title: "外联消息发送审批",
+  summary: "请审批",
+  entityType: "outreach_message",
+  entityId: "message-1",
+  payload: {},
+  priority: "high",
+  assigneeRole: "manager",
+  decidedBy: null,
+  decidedAt: null,
+  decisionReason: null,
+  createdAt: new Date("2026-07-04T00:00:00.000Z"),
+  createdBy: "user-1",
+};
+
+const decidedCheckpoint = {
+  ...pendingCheckpoint,
+  status: "approved",
+  decidedBy: "user-1",
+  decidedAt: new Date("2026-07-04T00:01:00.000Z"),
+};
+
+const findById = vi.fn();
+const decide = vi.fn();
+const getUserNames = vi.fn();
+const onOutreachApprovalDecided = vi.fn();
+
+vi.mock("./checkpoint.repository", () => ({
+  checkpointRepository: {
+    findById,
+    decide,
+  },
+}));
+
+vi.mock("@/server/modules/user/user.repository", () => ({
+  getUserNames,
+}));
+
+vi.mock("@/server/modules/outreach/outreach.service", () => ({
+  onOutreachApprovalDecided,
+}));
+
+describe("decideCheckpoint 外联审批联动", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findById.mockResolvedValueOnce(pendingCheckpoint).mockResolvedValueOnce(decidedCheckpoint);
+    decide.mockResolvedValue(true);
+    getUserNames.mockResolvedValue(new Map([["user-1", "林星澜"]]));
+  });
+
+  it("批准 outreach_send 审批项时同步更新外联消息状态", async () => {
+    const { decideCheckpoint } = await import("./checkpoint.service");
+
+    await decideCheckpoint({ orgId: "org-1", userId: "user-1" }, "checkpoint-1", "approved");
+
+    expect(onOutreachApprovalDecided).toHaveBeenCalledWith(
+      { orgId: "org-1", userId: "user-1" },
+      "message-1",
+      "approved",
+    );
+  });
+});

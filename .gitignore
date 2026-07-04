@@ -52,3 +52,6 @@ next-env.d.ts
 # tests
 /playwright-report/
 /test-results/
+
+# VSCode 扩展生成的行数统计，不入库
+.VSCodeCounter/
