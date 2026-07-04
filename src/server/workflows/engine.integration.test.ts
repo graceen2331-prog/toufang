@@ -104,6 +104,14 @@ describe.skipIf(!hasInfra)("工作流引擎（集成）", () => {
     expect(after?.status).toBe("completed");
   });
 
+  it("孤儿队列任务：DB reset 后残留 job 不会打崩 worker", async () => {
+    const staleRunId = crypto.randomUUID();
+    await expect(engine.executeStep(orgId, staleRunId, "gather_context")).resolves.toBeUndefined();
+    await expect(
+      engine.onStepFailed(orgId, staleRunId, "gather_context", "workflow run 不存在"),
+    ).resolves.toBeUndefined();
+  });
+
   it("审批驳回：run 终止且必须填原因", async () => {
     const ctx = { orgId, userId };
     const run = await engine.startWorkflow(ctx, {

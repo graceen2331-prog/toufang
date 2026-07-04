@@ -16,7 +16,7 @@ export const GET = createApiHandler({
 });
 
 export const POST = createApiHandler({
-  permission: "analytics:read",
+  permission: "analytics:write",
   body: MetricUpsertSchema,
   audit: "metric.upsert",
   created: true,

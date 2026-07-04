@@ -95,3 +95,19 @@ export function useStartContentReview() {
     onError: (err) => toast.error(err.message),
   });
 }
+
+export function useTransitionContentAsset() {
+  const invalidate = useInvalidateContent();
+  return useMutation({
+    mutationFn: ({ id, to, reason }: { id: string; to: string; reason?: string | null }) =>
+      apiFetch<ContentAssetDto>(`/content-assets/${id}/status`, {
+        method: "POST",
+        body: { to, reason },
+      }),
+    onSuccess: (asset) => {
+      toast.success("内容状态已更新");
+      invalidate(asset.id);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}

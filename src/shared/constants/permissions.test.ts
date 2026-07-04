@@ -29,6 +29,13 @@ describe("系统角色矩阵", () => {
     expect(finance).not.toContain("creator:write");
   });
 
+  it("指标录入权限只授予运营与内容角色", () => {
+    expect(SYSTEM_ROLES.manager!.permissions).toContain("analytics:write");
+    expect(SYSTEM_ROLES.kol_manager!.permissions).toContain("analytics:write");
+    expect(SYSTEM_ROLES.content_manager!.permissions).toContain("analytics:write");
+    expect(SYSTEM_ROLES.viewer!.permissions).not.toContain("analytics:write");
+  });
+
   it("所有系统角色的权限字符串都在权限表中", () => {
     for (const [key, def] of Object.entries(SYSTEM_ROLES)) {
       for (const p of def.permissions) {

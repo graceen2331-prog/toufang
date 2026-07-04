@@ -9,6 +9,22 @@ test.describe("认证与品牌管理", () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
+  test("残留无效 session cookie 时可以回到登录页重新登录", async ({ context, page }) => {
+    await context.addCookies([
+      {
+        name: "tf_session",
+        value: "stale-session-token",
+        domain: "localhost",
+        path: "/",
+        httpOnly: true,
+        sameSite: "Lax",
+      },
+    ]);
+    await page.goto("/dashboard");
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByLabel("邮箱")).toBeVisible();
+  });
+
   test("错误密码提示错误", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("邮箱").fill("admin@demo.com");

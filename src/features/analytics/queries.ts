@@ -7,6 +7,8 @@ import type { StartWorkflowResponseDto } from "@/shared/schemas/workflow";
 import type {
   AnalyticsOverviewDto,
   InsightDto,
+  MetricDto,
+  MetricUpsertInput,
   ReportDto,
 } from "@/shared/schemas/content-analytics";
 
@@ -91,6 +93,19 @@ export function useGenerateAnalytics() {
       toast.success("分析工作流已启动");
       void queryClient.invalidateQueries({ queryKey: ["analytics"] });
       void queryClient.invalidateQueries({ queryKey: analyticsKeys.reportsAll });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useUpsertMetric() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: MetricUpsertInput) =>
+      apiFetch<MetricDto>("/metrics", { method: "POST", body: input }),
+    onSuccess: () => {
+      toast.success("指标已录入");
+      void queryClient.invalidateQueries({ queryKey: ["analytics"] });
     },
     onError: (err) => toast.error(err.message),
   });

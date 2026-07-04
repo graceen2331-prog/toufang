@@ -72,8 +72,27 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
     : asset.latest_review?.findings ?? [];
   const feedback = asset.pending_feedback ?? asset.latest_review?.feedback ?? null;
   const hasHighRisk = findings.some((finding) => finding.severity === "high");
-  const canStart = !!asset.brief_id && ["submitted", "approved"].includes(asset.status);
+  const hasActiveWorkflow = !!asset.pending_workflow_run_id;
+  const canRetryStalledReview = asset.status === "in_review" && !hasActiveWorkflow;
+  const canStart =
+    !!asset.brief_id &&
+    !hasActiveWorkflow &&
+    (["submitted", "approved"].includes(asset.status) || canRetryStalledReview);
   const pendingCheckpointId = asset.pending_checkpoint_id;
+  let reviewDescription = "基于 Brief、品牌规范与平台规则生成审核建议。";
+  if (pendingCheckpointId) {
+    reviewDescription = "AI 审核已进入人工复核，请在此处理审批意见。";
+  } else if (hasActiveWorkflow) {
+    reviewDescription = "AI 审核正在生成复核意见。";
+  } else if (canRetryStalledReview) {
+    reviewDescription = "上一次审核没有完成，可以重新发起 AI 审核。";
+  }
+  let startButtonLabel = "发起 AI 审核";
+  if (hasActiveWorkflow) {
+    startButtonLabel = "审核进行中";
+  } else if (canRetryStalledReview) {
+    startButtonLabel = "重新发起 AI 审核";
+  }
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: contentReviewKeys.all });
@@ -99,11 +118,7 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
     <Card>
       <CardHeader>
         <CardTitle>AI 审核</CardTitle>
-        <CardDescription>
-          {asset.pending_workflow_run_id
-            ? "AI 审核已进入人工复核，请在此处理审批意见。"
-            : "基于 Brief、品牌规范与平台规则生成审核建议。"}
-        </CardDescription>
+        <CardDescription>{reviewDescription}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <PermissionGate permission="content:review">
@@ -113,7 +128,7 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
               onClick={() => startReview.mutate({ id: asset.id })}
             >
               <Play className="size-4" />
-              {asset.pending_workflow_run_id ? "审核进行中" : "发起 AI 审核"}
+              {startButtonLabel}
             </Button>
             {pendingCheckpointId && (
               <>
@@ -148,6 +163,11 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
 
         {!asset.brief_id && (
           <p className="text-sm text-destructive">Brief 缺失：请先生成并批准 Brief。</p>
+        )}
+        {canRetryStalledReview && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            上一次 AI 审核未产生可处理的审批项，内容仍停在审核中。请重新发起审核，系统会创建新的复核流程。
+          </p>
         )}
         {feedback && (
           <div className="rounded-lg bg-muted p-3">

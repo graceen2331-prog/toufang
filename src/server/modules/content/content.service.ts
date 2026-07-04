@@ -211,9 +211,8 @@ export async function startContentReviewWorkflow(
   const active = await contentRepository.findActiveWorkflow(ctx, contentAssetId);
   if (active) return workflowResponse(active);
 
-  if (asset.status === "submitted" || asset.status === "approved") {
-    await contentRepository.transitionAsset(ctx, contentAssetId, asset.status, "in_review", "发起内容审核");
-  } else if (asset.status !== "in_review") {
+  const shouldMarkInReview = asset.status === "submitted" || asset.status === "approved";
+  if (!shouldMarkInReview && asset.status !== "in_review") {
     throw new ApiError("CONFLICT", "只有已提交或已过审内容可以发起审核");
   }
 
@@ -224,6 +223,9 @@ export async function startContentReviewWorkflow(
     subjectId: contentAssetId,
     input: { review_id: review.id, instruction: instruction ?? null },
   });
+  if (shouldMarkInReview) {
+    await contentRepository.transitionAsset(ctx, contentAssetId, asset.status, "in_review", "发起内容审核");
+  }
   return workflowResponse(run);
 }
 

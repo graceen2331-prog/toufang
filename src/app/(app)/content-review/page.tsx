@@ -1,12 +1,16 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import { Plus } from "lucide-react";
 import { FilterSelect } from "@/components/shared/filter-select";
 import { PageHeader } from "@/components/shared/page-header";
+import { PermissionGate } from "@/components/shared/permission-gate";
 import { Button } from "@/components/ui/button";
 import { useCampaigns } from "@/features/campaigns/queries";
 import { ContentAssetQueue } from "@/features/content-review/components/content-asset-queue";
+import { ContentPublishPanel } from "@/features/content-review/components/content-publish-panel";
 import { ContentPreview } from "@/features/content-review/components/content-preview";
+import { CreateContentAssetDialog } from "@/features/content-review/components/create-content-asset-dialog";
 import { ReviewFindingsPanel } from "@/features/content-review/components/review-findings-panel";
 import { useContentAsset, useContentAssets } from "@/features/content-review/queries";
 import { useCursorPagination, useUrlFilters } from "@/lib/list-state";
@@ -26,6 +30,7 @@ function ContentReviewPageInner() {
   const { filters, setFilter, reset, isFiltered } = useUrlFilters(FILTER_DEFAULTS);
   const pagination = useCursorPagination();
   const [explicitSelectedId, setExplicitSelectedId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const { data: campaigns } = useCampaigns({});
   const list = useContentAssets({
     status: filters.status || undefined,
@@ -41,6 +46,14 @@ function ContentReviewPageInner() {
       <PageHeader
         title="内容审核"
         description="集中处理达人内容初稿、AI 合规 findings 与人工复核。"
+        actions={
+          <PermissionGate permission="content:review">
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" />
+              提交内容
+            </Button>
+          </PermissionGate>
+        }
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -106,8 +119,14 @@ function ContentReviewPageInner() {
         <div className="space-y-4">
           <ContentPreview asset={asset} />
           <ReviewFindingsPanel asset={asset} />
+          <ContentPublishPanel asset={asset} />
         </div>
       </div>
+      <CreateContentAssetDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={setExplicitSelectedId}
+      />
     </div>
   );
 }

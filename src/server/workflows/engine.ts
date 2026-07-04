@@ -202,7 +202,10 @@ async function collectOutputs(runId: string): Promise<Record<string, unknown>> {
  */
 export async function executeStep(tenantId: string, runId: string, stepKey: string): Promise<void> {
   const run = await prisma.workflowRun.findFirst({ where: { id: runId, tenantId } });
-  if (!run) throw new Error(`workflow run ${runId} 不存在`);
+  if (!run) {
+    console.warn(`[workflow] 忽略孤儿队列任务：run=${runId} step=${stepKey} 不存在`);
+    return;
+  }
   if (["cancelled", "failed", "completed"].includes(run.status)) return;
 
   const def = getWorkflowDefinition(run.workflowKey);
@@ -307,6 +310,10 @@ export async function onStepFailed(
   error: string,
 ): Promise<void> {
   const run = await prisma.workflowRun.findFirst({ where: { id: runId, tenantId } });
+  if (!run) {
+    console.warn(`[workflow] 忽略孤儿失败回调：run=${runId} step=${stepKey} 不存在`);
+    return;
+  }
   const stepRow = await prisma.workflowStep.findFirst({ where: { runId, stepKey } });
   if (stepRow) {
     await setStepStatus(runId, stepRow.id, stepKey, "failed", {

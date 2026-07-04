@@ -16,8 +16,9 @@ export function proxy(request: NextRequest) {
 
   const hasSession = request.cookies.has(SESSION_COOKIE);
 
-  // 已登录访问登录页 / 根路径 → 进入工作台
-  if (hasSession && (pathname === "/login" || pathname === "/")) {
+  // 根路径有 session cookie 时进入工作台；登录页始终放行，避免 DB reset
+  // 或会话过期后残留 cookie 造成 /dashboard <-> /login 循环。
+  if (hasSession && pathname === "/") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
