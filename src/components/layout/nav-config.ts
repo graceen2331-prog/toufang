@@ -75,4 +75,4 @@ export const NAV_GROUPS: NavGroup[] = [
 ];
 
 /** 当前波次已实现的路由（未实现的自动隐藏，避免 404） */
-export const IMPLEMENTED_ROUTES = new Set(["/dashboard", "/brands"]);
+export const IMPLEMENTED_ROUTES = new Set(["/dashboard", "/brands", "/creators"]);
