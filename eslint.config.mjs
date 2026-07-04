@@ -44,16 +44,19 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    // 业务 service 层禁止直接使用裸 prisma client，必须经 repository（租户注入）
+    // 业务 service 层禁止直接使用裸 prisma client，必须经 repository（租户注入）。
+    // auth/audit 是跨租户基础设施模块，豁免；类型导入放行。
     files: ["src/server/modules/**/*.service.ts"],
+    ignores: ["src/server/modules/auth/**", "src/server/modules/audit/**"],
     rules: {
-      "no-restricted-imports": [
+      "@typescript-eslint/no-restricted-imports": [
         "error",
         {
           patterns: [
             {
               group: ["@/server/db/client", "@/generated/*"],
               message: "service 层禁止直接访问 prisma，请通过同模块 repository。",
+              allowTypeImports: true,
             },
           ],
         },
