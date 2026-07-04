@@ -52,6 +52,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { StatusTag } from "@/components/shared/status-tag";
 import { StatusTimeline } from "@/components/shared/status-timeline";
+import { StrategyTab } from "@/features/campaigns/components/strategy-tab";
 import {
   useAddCampaignCreators,
   useCampaign,
@@ -161,6 +162,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
           <Tabs defaultValue="overview">
             <TabsList>
               <TabsTrigger value="overview">概览</TabsTrigger>
+              <TabsTrigger value="strategy">策略</TabsTrigger>
               <TabsTrigger value="creators">达人</TabsTrigger>
               <TabsTrigger value="tasks">任务</TabsTrigger>
               <TabsTrigger value="budget">预算</TabsTrigger>
@@ -168,6 +170,9 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
             </TabsList>
             <TabsContent value="overview" className="mt-4">
               <OverviewTab campaign={campaign} />
+            </TabsContent>
+            <TabsContent value="strategy" className="mt-4">
+              <StrategyTab campaignId={campaign.id} />
             </TabsContent>
             <TabsContent value="creators" className="mt-4">
               <CreatorsTab campaignId={campaign.id} />
