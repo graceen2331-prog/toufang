@@ -10,17 +10,7 @@ const workflowSteps = [
   "复盘",
 ];
 
-const overviewItems = [
-  { label: "验收链路", value: "8 步", detail: "从策略到报告全程可追踪" },
-  { label: "审批门", value: "12", detail: "外发、合同、付款、报告留痕" },
-  { label: "组织隔离", value: "2 个", detail: "星澜传媒 / 北辰品牌部" },
-];
-
-const reviewRows = [
-  { title: "焕亮维C精华", status: "进行中", meta: "内容审核 + 数据复盘" },
-  { title: "达人 shortlist", status: "待审批", meta: "AI 评分已完成" },
-  { title: "知识问答", status: "可引用", meta: "SOP / 复盘知识卡" },
-];
+const footerNotes = ["演示工作区", "审批留痕", "多组织权限"];
 
 export function LoginBrandPanel() {
   return (
@@ -60,52 +50,12 @@ export function LoginBrandPanel() {
             </span>
           ))}
         </div>
-
-        <div className="mt-9 hidden max-w-3xl gap-3 sm:grid sm:grid-cols-3">
-          {overviewItems.map((item) => (
-            <div
-              key={item.label}
-              className="border border-white/10 bg-white/[0.045] p-4 shadow-[0_16px_46px_rgba(0,0,0,0.16)]"
-            >
-              <p className="text-xs text-emerald-100/50">{item.label}</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-white">{item.value}</p>
-              <p className="mt-2 text-xs leading-5 text-emerald-50/55">{item.detail}</p>
-            </div>
-          ))}
-        </div>
       </div>
 
-      <div className="mt-10 hidden gap-4 lg:mt-0 lg:grid lg:grid-cols-[1fr_auto] lg:items-end">
-        <div className="max-w-xl border border-white/10 bg-[#0b231a]/70 p-4 shadow-[0_18px_55px_rgba(0,0,0,0.22)] backdrop-blur">
-          <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3">
-            <div>
-              <p className="text-xs text-emerald-100/50">工作台快照</p>
-              <p className="mt-1 text-sm font-medium text-white">今日需要关注的业务对象</p>
-            </div>
-            <span className="bg-[#f6c761]/15 px-2 py-1 text-xs font-medium whitespace-nowrap text-[#f7d992]">
-              演示数据
-            </span>
-          </div>
-          <div className="mt-3 space-y-2">
-            {reviewRows.map((row) => (
-              <div
-                key={row.title}
-                className="grid grid-cols-[1fr_auto] gap-3 border border-white/8 bg-white/[0.025] px-3 py-2.5"
-              >
-                <div>
-                  <p className="text-sm font-medium text-emerald-50">{row.title}</p>
-                  <p className="mt-1 text-xs text-emerald-100/48">{row.meta}</p>
-                </div>
-                <span className="self-start border border-emerald-200/14 px-2 py-1 text-xs text-emerald-100/72">
-                  {row.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <p className="font-mono text-xs leading-6 text-emerald-100/35 lg:text-right">
-          Seed v3 · PostgreSQL · MODEL_PROVIDER=fake/local
-        </p>
+      <div className="mt-12 flex flex-wrap gap-x-6 gap-y-2 border-t border-white/10 pt-5 text-xs text-emerald-100/38 lg:mt-0">
+        {footerNotes.map((note) => (
+          <span key={note}>{note}</span>
+        ))}
       </div>
     </section>
   );

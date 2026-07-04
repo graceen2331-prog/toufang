@@ -104,7 +104,7 @@ export function LoginForm() {
                 点击账号可自动填充，密码均为 {DEMO_PASSWORD}
               </p>
             </div>
-            <span className="font-mono text-xs text-muted-foreground">seed-ready</span>
+            <span className="text-xs text-muted-foreground">可一键试用</span>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {demoAccounts.map((account) => (
