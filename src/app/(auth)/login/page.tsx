@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { LoginForm } from "@/features/auth/components/login-form";
+import { LoginScreen } from "@/features/auth/components/login-screen";
 
-export const metadata: Metadata = { title: "登录" };
+export const metadata: Metadata = {
+  title: "登录",
+  description: "登录 KOL Marketing OS 工作区",
+};
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-      <Suspense>
-        <LoginForm />
-      </Suspense>
-    </main>
+    <Suspense>
+      <LoginScreen />
+    </Suspense>
   );
 }
