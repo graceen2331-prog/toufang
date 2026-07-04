@@ -7,7 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusTimeline } from "@/components/shared/status-timeline";
 import { StatusTag } from "@/components/shared/status-tag";
 import { useCampaignEvents } from "@/features/campaigns/queries";
-import { nextStage, STAGE_LABELS } from "@/features/campaigns/components/campaign-stage-flow";
+import {
+  getStageDecision,
+  STAGE_LABELS,
+} from "@/features/campaigns/components/campaign-stage-decisions";
+import { nextStage } from "@/features/campaigns/components/campaign-stage-flow";
 import { CAMPAIGN_STATUS } from "@/shared/constants/status";
 import { CAMPAIGN_OBJECTIVES, type CampaignDetailDto } from "@/shared/schemas/campaign";
 import { PLATFORM_LABELS } from "@/shared/schemas/creator";
@@ -65,6 +69,7 @@ export function CampaignOverviewTab({ campaign }: { campaign: CampaignDetailDto 
       ? Math.min(100, (campaign.budget_used_cents / campaign.budget_total_cents) * 100)
       : 0;
   const next = nextStage(campaign.status);
+  const decision = getStageDecision(campaign.status);
   const guides = STAGE_GUIDES[campaign.status] ?? ["确认当前阶段产物", "再推进到下一阶段"];
 
   return (
@@ -163,7 +168,7 @@ export function CampaignOverviewTab({ campaign }: { campaign: CampaignDetailDto 
 
       <Card className="border-primary/25 bg-primary/[0.03]">
         <CardHeader>
-          <CardTitle className="text-base">阶段指引</CardTitle>
+          <CardTitle className="text-base">阶段决策台</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5 text-sm">
           <div>
@@ -171,6 +176,9 @@ export function CampaignOverviewTab({ campaign }: { campaign: CampaignDetailDto 
             <p className="mt-1 text-lg font-semibold">
               {STAGE_LABELS[campaign.status] ?? campaign.status}
             </p>
+            <Badge className="mt-2" variant="outline">
+              {decision.mode}
+            </Badge>
           </div>
           {next && (
             <div>
@@ -178,6 +186,13 @@ export function CampaignOverviewTab({ campaign }: { campaign: CampaignDetailDto 
               <p className="mt-1 font-medium text-primary">推进到「{STAGE_LABELS[next]}」</p>
             </div>
           )}
+          <DecisionBlock label="AI 先判断" value={decision.aiDecision} />
+          <DecisionBlock label="人来拍板" value={decision.humanDecision} />
+          <DecisionBlock label="系统落地" value={decision.systemAction} />
+          <div className="border-t pt-4">
+            <p className="text-xs text-muted-foreground">审批门</p>
+            <p className="mt-1 font-medium">{decision.approvalGate}</p>
+          </div>
           <div className="border-t pt-4">
             <p className="font-medium">进入下一步前建议确认</p>
             <ul className="mt-3 space-y-3 text-muted-foreground">
@@ -191,6 +206,15 @@ export function CampaignOverviewTab({ campaign }: { campaign: CampaignDetailDto 
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function DecisionBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-t pt-4">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 leading-relaxed">{value}</p>
     </div>
   );
 }

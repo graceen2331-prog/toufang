@@ -30,6 +30,8 @@ test.describe("Campaign 域", () => {
     await page.getByRole("option").first().click();
     await page.getByRole("button", { name: /创建/ }).click();
     await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]+/, { timeout: 10_000 });
+    await expect(page.getByText("AI 决策").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /运行 AI 策略/ })).toBeVisible();
 
     // 主流程推进：draft → strategy
     await page.getByRole("button", { name: /推进到「策略」/ }).click();

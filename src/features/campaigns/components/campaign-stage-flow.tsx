@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowRight, MoreHorizontal } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, MoreHorizontal, ShieldCheck, Sparkles, UserCheck, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,7 +14,10 @@ import {
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { StatusTag } from "@/components/shared/status-tag";
-import { useTransitionCampaignStatus } from "@/features/campaigns/queries";
+import { WorkflowProgress } from "@/components/shared/workflow-progress";
+import { campaignKeys, useTransitionCampaignStatus } from "@/features/campaigns/queries";
+import { getStageDecision, STAGE_LABELS } from "@/features/campaigns/components/campaign-stage-decisions";
+import { useStartCampaignWorkflow, workflowKeys } from "@/features/workflows/queries";
 import {
   CAMPAIGN_PIPELINE,
   CAMPAIGN_STATUS,
@@ -21,24 +25,6 @@ import {
   type StatusTone,
 } from "@/shared/constants/status";
 import { cn } from "@/lib/utils";
-
-const STAGE_LABELS: Record<string, string> = {
-  draft: "草稿",
-  strategy: "策略",
-  research: "研究",
-  creator_discovery: "达人发现",
-  shortlisting: "筛选",
-  brief_creation: "Brief",
-  outreach: "触达",
-  negotiation: "谈判",
-  contracting: "签约",
-  content_creation: "内容制作",
-  content_review: "内容审核",
-  publishing: "发布",
-  metrics_collection: "数据回收",
-  reporting: "复盘",
-  completed: "已完成",
-};
 
 const TONE_DOT_CLASSES: Record<StatusTone, string> = {
   neutral: "bg-muted-foreground",
@@ -69,6 +55,17 @@ function secondaryTargets(currentStatus: string): string[] {
   );
 }
 
+function shortDecisionMode(mode: ReturnType<typeof getStageDecision>["mode"]): string {
+  if (mode === "AI 建议 + 人审") return "AI+人审";
+  if (mode === "AI 分析 + 人工决策") return "AI+人决";
+  if (mode === "系统归档") return "系统";
+  return "人工";
+}
+
+interface ActiveRun {
+  runId: string;
+}
+
 export function CampaignStageFlow({
   campaignId,
   currentStatus,
@@ -76,14 +73,26 @@ export function CampaignStageFlow({
   campaignId: string;
   currentStatus: string;
 }) {
+  const queryClient = useQueryClient();
   const transition = useTransitionCampaignStatus();
+  const startWorkflow = useStartCampaignWorkflow();
   const [pendingTo, setPendingTo] = useState<string | null>(null);
+  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const currentIndex = CAMPAIGN_PIPELINE.indexOf(
     currentStatus as (typeof CAMPAIGN_PIPELINE)[number],
   );
   const next = nextStage(currentStatus);
   const secondary = useMemo(() => secondaryTargets(currentStatus), [currentStatus]);
   const currentMeta = statusMeta(CAMPAIGN_STATUS, currentStatus);
+  const decision = getStageDecision(currentStatus);
+
+  const handleRunWorkflow = () => {
+    if (!decision.workflowKey) return;
+    startWorkflow.mutate(
+      { campaignId, key: decision.workflowKey },
+      { onSuccess: (res) => setActiveRun({ runId: res.workflow_run_id }) },
+    );
+  };
 
   return (
     <section className="border bg-card p-4 shadow-[0_14px_36px_rgba(8,28,20,0.07)]">
@@ -94,9 +103,25 @@ export function CampaignStageFlow({
         </div>
         <PermissionGate permission="campaign:status">
           <div className="flex items-center gap-2">
+            {decision.workflowKey && (
+              <PermissionGate permission="ai:run">
+                <Button
+                  variant="outline"
+                  disabled={startWorkflow.isPending}
+                  onClick={handleRunWorkflow}
+                >
+                  <Sparkles className="size-4" />
+                  {startWorkflow.isPending ? "启动中…" : decision.workflowLabel}
+                </Button>
+              </PermissionGate>
+            )}
             {next && (
-              <Button disabled={transition.isPending} onClick={() => setPendingTo(next)}>
-                推进到「{STAGE_LABELS[next]}」
+              <Button
+                variant={decision.workflowKey ? "outline" : "default"}
+                disabled={transition.isPending}
+                onClick={() => setPendingTo(next)}
+              >
+                {decision.workflowKey ? "人工推进到" : "推进到"}「{STAGE_LABELS[next]}」
                 <ArrowRight className="size-4" />
               </Button>
             )}
@@ -126,6 +151,33 @@ export function CampaignStageFlow({
         </PermissionGate>
       </div>
 
+      <div className="mb-4 grid gap-3 border-t pt-4 md:grid-cols-3">
+        <DecisionCell
+          icon={Sparkles}
+          label="AI 决策"
+          value={decision.aiDecision}
+          tone="text-primary"
+        />
+        <DecisionCell icon={UserCheck} label="人工判断" value={decision.humanDecision} />
+        <DecisionCell icon={ShieldCheck} label="审批门" value={decision.approvalGate} />
+      </div>
+
+      {activeRun && (
+        <div className="mb-4 border bg-background p-3">
+          <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+            <Workflow className="size-4 text-primary" />
+            AI 工作流进度
+          </div>
+          <WorkflowProgress
+            runId={activeRun.runId}
+            onFinished={() => {
+              void queryClient.invalidateQueries({ queryKey: campaignKeys.all });
+              void queryClient.invalidateQueries({ queryKey: workflowKeys.all });
+            }}
+          />
+        </div>
+      )}
+
       <div className="overflow-x-auto pb-1">
         <ol className="grid min-w-[1200px] grid-cols-[repeat(15,minmax(0,1fr))] items-start gap-0 px-10">
           {CAMPAIGN_PIPELINE.map((stage, index) => {
@@ -133,6 +185,7 @@ export function CampaignStageFlow({
             const isCurrent = currentStatus === stage;
             const isFuture = currentIndex >= 0 && currentIndex < index;
             const meta = statusMeta(CAMPAIGN_STATUS, stage);
+            const stageDecision = getStageDecision(stage);
             return (
               <li key={stage} className="relative flex flex-col items-center gap-2 text-center">
                 {index > 0 && (
@@ -179,6 +232,14 @@ export function CampaignStageFlow({
                 >
                   {STAGE_LABELS[stage]}
                 </span>
+                <span
+                  className={cn(
+                    "w-20 text-[10px] leading-tight",
+                    isCurrent ? "text-primary" : "text-muted-foreground",
+                  )}
+                >
+                  {shortDecisionMode(stageDecision.mode)}
+                </span>
               </li>
             );
           })}
@@ -213,4 +274,26 @@ export function CampaignStageFlow({
   );
 }
 
-export { STAGE_LABELS, nextStage };
+function DecisionCell({
+  icon: Icon,
+  label,
+  value,
+  tone = "text-foreground",
+}: {
+  icon: typeof Sparkles;
+  label: string;
+  value: string;
+  tone?: string;
+}) {
+  return (
+    <div className="min-w-0 border bg-background p-3">
+      <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon className={cn("size-3.5", tone)} />
+        {label}
+      </div>
+      <p className="text-sm leading-relaxed">{value}</p>
+    </div>
+  );
+}
+
+export { nextStage };
