@@ -6,6 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { hash } from "@node-rs/argon2";
 import { SYSTEM_ROLES } from "../src/shared/constants/permissions";
 import { seedCreators } from "./seed-creators";
+import { seedCampaigns } from "./seed-campaigns";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
@@ -156,6 +157,9 @@ async function main() {
 
   // ===== 达人（seed v2）=====
   await seedCreators(prisma, org.id, admin.id);
+
+  // ===== Campaign（seed v3）=====
+  await seedCampaigns(prisma, org.id, admin.id);
 
   // ===== 组织二：北辰品牌部（验证租户隔离与多组织切换） =====
   const org2 = await upsertOrg("北辰品牌部", "beichen");

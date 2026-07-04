@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronsUpDown, LogOut, Sparkles } from "lucide-react";
+import { ChevronsUpDown, LogOut, ShieldCheck, Sparkles } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { IMPLEMENTED_ROUTES, NAV_GROUPS } from "@/components/layout/nav-config";
+import { usePendingApprovalCount } from "@/features/approvals/queries";
 import { useLogout, useMe, useSwitchOrg } from "@/features/auth/queries";
 import { roleHasPermission } from "@/shared/constants/permissions";
 import { cn } from "@/lib/utils";
@@ -132,28 +133,50 @@ function Topbar() {
           <span className="text-sm font-medium">{me?.org?.name}</span>
         )}
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <Avatar className="size-8">
-              <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuLabel>
-            <div className="text-sm font-medium">{me?.user.name}</div>
-            <div className="text-xs font-normal text-muted-foreground">{me?.user.email}</div>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => logout.mutate()} variant="destructive">
-            <LogOut className="size-4" />
-            退出登录
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="flex items-center gap-2">
+        {me && roleHasPermission(me.permissions, "approval:read") && <ApprovalsBell />}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Avatar className="size-8">
+                <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuLabel>
+              <div className="text-sm font-medium">{me?.user.name}</div>
+              <div className="text-xs font-normal text-muted-foreground">{me?.user.email}</div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => logout.mutate()} variant="destructive">
+              <LogOut className="size-4" />
+              退出登录
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </header>
+  );
+}
+
+/** 审批入口：待审批数 > 0 时显示红点数字 */
+function ApprovalsBell() {
+  const { data } = usePendingApprovalCount();
+  const pending = data?.pending ?? 0;
+
+  return (
+    <Button variant="ghost" size="icon" className="relative" asChild>
+      <Link href="/approvals" aria-label="审批中心">
+        <ShieldCheck className="size-5" />
+        {pending > 0 && (
+          <span className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-white">
+            {pending > 99 ? "99+" : pending}
+          </span>
+        )}
+      </Link>
+    </Button>
   );
 }
