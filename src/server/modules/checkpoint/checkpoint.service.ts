@@ -101,6 +101,16 @@ export async function decideCheckpoint(
     await onPaymentApprovalDecided(ctx, checkpoint.entityId, decision);
   }
 
+  if (checkpoint.type === "content" && checkpoint.entityType === "content_asset" && checkpoint.entityId) {
+    const { onContentReviewDecided } = await import("@/server/modules/content/content.service");
+    await onContentReviewDecided(ctx, checkpoint.entityId, decision);
+  }
+
+  if (checkpoint.type === "report" && checkpoint.entityType === "report" && checkpoint.entityId) {
+    const { onReportApprovalDecided } = await import("@/server/modules/analytics/analytics.service");
+    await onReportApprovalDecided(ctx, checkpoint.entityId, decision);
+  }
+
   const updated = await checkpointRepository.findById(ctx, id);
   const names = await getUserNames(updated?.decidedBy ? [updated.decidedBy] : []);
   return toDto(updated!, names);

@@ -91,6 +91,69 @@ const FIXTURES: Record<string, unknown> = {
     required_approvals: ["若最终价超过 7.2 万需预算上调审批"],
     risk_notes: ["大促档期紧张，谈判周期不宜超过一周"],
   },
+  "content_review.evaluate": {
+    decision: "approved",
+    risk_level: "high",
+    findings: [
+      {
+        type: "restricted_term",
+        severity: "high",
+        quote: "医疗级焕亮，7 天治愈暗沉",
+        issue: "内容包含品牌禁用词与医疗功效暗示，超出 Brief 允许表达范围。",
+        suggestion: "改为“温和提亮肤色，结合 28 天使用记录展示变化”，避免医疗化表述。",
+      },
+      {
+        type: "brief_alignment",
+        severity: "medium",
+        quote: "没有提到双十一优惠入口",
+        issue: "缺少 Brief 要求的购物车优惠 CTA。",
+        suggestion: "在结尾补充“点击购物车领取双十一专属优惠”。",
+      },
+    ],
+    creator_feedback:
+      "整体内容方向契合成分实测，但含高风险表达；如人工确认已修改或风险可控，方可批准发布。",
+  },
+  "analytics.analyze": {
+    summary:
+      "近 30 天内容曝光与互动保持增长，短视频内容贡献了主要观看量；当前转化数据仍不完整，ROI 判断需要谨慎。",
+    kpi_status: [
+      { name: "曝光", status: "on_track", actual: 1280000, target: 1000000, note: "曝光已超过阶段目标。" },
+      { name: "转化", status: "unknown", actual: null, target: 1200, note: "缺少完整订单回传，暂不判断。" },
+    ],
+    top_performers: [
+      { entity_id: "content-top", reason: "短视频完播与互动均高于均值", metric: "views" },
+    ],
+    low_performers: [
+      { entity_id: "content-low", reason: "点击率低于 Campaign 均值", metric: "clicks" },
+    ],
+    anomalies: [
+      {
+        title: "7 月中旬评论量异常升高",
+        severity: "warning",
+        explanation: "评论量相对前 7 日均值增长明显，可能与争议词讨论相关（推断）。",
+        evidence: "comments 环比增长 68%",
+      },
+    ],
+    recommendations: [
+      {
+        action: "优先复投高完播短视频，并要求达人追加购物车 CTA",
+        rationale: "观看和互动已经达标，但点击链路仍有提升空间。",
+        owner_hint: "内容负责人",
+      },
+    ],
+    data_quality_notes: ["缺少部分平台的 revenue_cents 和 cost_cents，ROI 仅可作为方向参考。"],
+  },
+  "report.generate": {
+    title: "焕亮维C精华 双十一种草阶段复盘",
+    executive_summary:
+      "本阶段通过成分实测内容带动曝光增长，互动表现优于预期；受订单回传缺口影响，转化效率仍需补数后复核。",
+    narrative:
+      "事实：短视频内容贡献主要观看量，评论与收藏增长明显。推断：成分党叙事强化了信任，但购买 CTA 露出不足限制了点击转化。",
+    key_learnings: ["成分实测内容更适合承担信任背书", "内容末尾 CTA 对点击表现影响明显"],
+    recommendations: ["复投高完播达人素材", "补齐订单回传后重新计算 ROI", "下一轮 Brief 强制加入购物车 CTA"],
+    data_limitations: ["部分平台缺少收入与成本字段", "达人级归因仍有滞后"],
+    requires_approval: true,
+  },
   "strategy.generate": {
     summary:
       "以「成分实证 + 场景种草」双线策略切入双十一大促周期：头部达人建立信任背书，腰部达人批量种草扩散，尾部素人晒单营造氛围。",

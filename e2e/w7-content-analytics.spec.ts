@@ -1,0 +1,53 @@
+import { expect, test, type Page } from "@playwright/test";
+
+// 冒烟 #7：内容审核 + 数据分析
+// 前置：pnpm seed；dev + worker（MODEL_PROVIDER=fake）运行中
+
+async function loginAsAdmin(page: Page) {
+  await page.goto("/login");
+  await page.getByLabel("邮箱").fill("admin@demo.com");
+  await page.getByLabel("密码").fill("demo1234");
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page).toHaveURL(/\/dashboard/);
+}
+
+async function approveFirst(page: Page, titlePattern: RegExp) {
+  await page.goto("/approvals");
+  const card = page.locator("div").filter({ hasText: titlePattern }).first();
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "批准" }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
+  await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 10_000 });
+}
+
+test.describe("W7 内容审核与数据分析", () => {
+  test("内容审核工作台：触发 AI 审核 → 审批通过 → 内容过审", async ({ page }) => {
+    test.slow();
+    await loginAsAdmin(page);
+
+    await page.goto("/content-review");
+    await expect(page.getByText("林小鹿 28 天焕亮实测初稿")).toBeVisible({ timeout: 15_000 });
+    await page.getByText("林小鹿 28 天焕亮实测初稿").click();
+    const startButton = page.getByRole("button", { name: /发起 AI 审核/ });
+    if (await startButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await startButton.click();
+    }
+    await expect(page.getByText(/医疗功效暗示|禁用词/)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "批准" })).toBeVisible({ timeout: 30_000 });
+
+    await approveFirst(page, /内容审核复核/);
+
+    await page.goto("/content-review");
+    await page.getByText("林小鹿 28 天焕亮实测初稿").click();
+    await expect(page.getByText("已过审").first()).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("分析页展示 KPI、趋势图和 AI Insights", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto("/analytics");
+    await expect(page.getByText("曝光").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("趋势")).toBeVisible();
+    await expect(page.getByText("AI Insights")).toBeVisible();
+    await expect(page.getByText(/成分实测内容观看稳定增长|评论区出现禁用词讨论/).first()).toBeVisible();
+  });
+});

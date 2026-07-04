@@ -115,6 +115,14 @@ export const STEP_KEY_LABELS: Record<string, string> = {
   apply_scores: "落分与状态推进",
   generate_brief: "生成 Brief 草案",
   apply_brief: "创建 Brief 版本",
+  evaluate_content: "AI 审核内容",
+  apply_review: "落地内容审核",
+  gather_metrics: "采集指标",
+  normalize_metrics: "归一化指标",
+  compute_kpis: "计算 KPI",
+  analyze_metrics: "AI 生成洞察",
+  draft_report: "生成报告草案",
+  save_outputs: "保存洞察与报告",
 };
 
 /** 成本显示：microcents(美分百万分之一) → 美元字符串 */

@@ -44,7 +44,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { title: "Campaign", href: "/campaigns", icon: Megaphone, permission: "campaign:read" },
       { title: "达人库", href: "/creators", icon: Users, permission: "creator:read" },
       { title: "外联工作台", href: "/outreach", icon: MessageSquare, permission: "outreach:read" },
-      { title: "内容审核", href: "/contents/review", icon: CheckSquare, permission: "content:review" },
+      { title: "内容审核", href: "/content-review", icon: CheckSquare, permission: "content:review" },
       { title: "合同与付款", href: "/contracts", icon: Wallet, permission: "contract:read" },
     ],
   },
@@ -52,6 +52,7 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "洞察与知识",
     items: [
       { title: "数据分析", href: "/analytics", icon: BarChart3, permission: "analytics:read" },
+      { title: "报告", href: "/reports", icon: ScrollText, permission: "report:read" },
       { title: "知识库", href: "/knowledge", icon: BookOpen, permission: "knowledge:read" },
       { title: "AI 运行监控", href: "/ai-runs", icon: Bot, permission: "ai:monitor" },
     ],
@@ -81,7 +82,10 @@ export const IMPLEMENTED_ROUTES = new Set([
   "/creators",
   "/campaigns",
   "/outreach",
+  "/content-review",
   "/contracts",
+  "/analytics",
+  "/reports",
   "/ai-runs",
   "/approvals",
 ]);

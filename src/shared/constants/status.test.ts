@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   CAMPAIGN_CREATOR_STATUS,
   CAMPAIGN_STATUS,
+  CONTENT_ASSET_STATUS,
+  CONTENT_REVIEW_STATUS,
   InvalidTransitionError,
   OUTREACH_MESSAGE_STATUS,
+  REPORT_STATUS,
   WORKFLOW_RUN_STATUS,
   assertTransition,
   canTransition,
@@ -73,6 +76,29 @@ describe("Outreach 消息状态机", () => {
 
   it("发送失败可重新排期", () => {
     expect(canTransition(OUTREACH_MESSAGE_STATUS, "failed", "scheduled")).toBe(true);
+  });
+});
+
+describe("内容审核状态机", () => {
+  it("内容资产审核通过必须从 in_review 进入 approved", () => {
+    expect(canTransition(CONTENT_ASSET_STATUS, "submitted", "in_review")).toBe(true);
+    expect(canTransition(CONTENT_ASSET_STATUS, "in_review", "approved")).toBe(true);
+    expect(canTransition(CONTENT_ASSET_STATUS, "submitted", "approved")).toBe(false);
+  });
+
+  it("审核记录按 queued → reviewing → completed 推进", () => {
+    expect(canTransition(CONTENT_REVIEW_STATUS, "queued", "reviewing")).toBe(true);
+    expect(canTransition(CONTENT_REVIEW_STATUS, "reviewing", "completed")).toBe(true);
+    expect(canTransition(CONTENT_REVIEW_STATUS, "completed", "reviewing")).toBe(false);
+  });
+});
+
+describe("报告状态机", () => {
+  it("报告审批后才能批准并导出", () => {
+    expect(canTransition(REPORT_STATUS, "draft", "in_review")).toBe(true);
+    expect(canTransition(REPORT_STATUS, "in_review", "approved")).toBe(true);
+    expect(canTransition(REPORT_STATUS, "approved", "exported")).toBe(true);
+    expect(canTransition(REPORT_STATUS, "draft", "exported")).toBe(false);
   });
 });
 

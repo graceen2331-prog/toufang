@@ -309,6 +309,42 @@ export const CONTENT_ASSET_STATUS: StateMachine = {
   },
 };
 
+export const CONTENT_REVIEW_STATUS: StateMachine = {
+  entityType: "content_review",
+  field: "status",
+  initial: "queued",
+  states: {
+    queued: { label: "排队中", tone: "info" },
+    reviewing: { label: "审核中", tone: "progress" },
+    completed: { label: "已完成", tone: "success" },
+  },
+  transitions: {
+    queued: ["reviewing"],
+    reviewing: ["completed"],
+    completed: [],
+  },
+};
+
+export const REPORT_STATUS: StateMachine = {
+  entityType: "report",
+  field: "status",
+  initial: "generating",
+  states: {
+    generating: { label: "生成中", tone: "progress" },
+    draft: { label: "草稿", tone: "neutral" },
+    in_review: { label: "审核中", tone: "warning" },
+    approved: { label: "已批准", tone: "success" },
+    exported: { label: "已导出", tone: "info" },
+  },
+  transitions: {
+    generating: ["draft", "in_review"],
+    draft: ["in_review"],
+    in_review: ["approved", "draft"],
+    approved: ["exported", "draft"],
+    exported: [],
+  },
+};
+
 // ---------------------------------------------------------------
 // 合同（8 态）与付款（8 态）
 // ---------------------------------------------------------------
