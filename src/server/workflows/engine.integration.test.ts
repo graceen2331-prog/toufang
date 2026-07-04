@@ -4,6 +4,8 @@ import "dotenv/config";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 process.env.MODEL_PROVIDER = "fake";
+// 独立队列前缀：避免 dev worker 消费测试 job 导致竞态
+process.env.QUEUE_PREFIX = `test-${Date.now()}`;
 
 const hasInfra = !!process.env.DATABASE_URL;
 

@@ -28,8 +28,12 @@ const globalForQueues = globalThis as unknown as {
   ragIngestQueue?: Queue<RagIngestJob>;
 };
 
+// 队列前缀：测试用独立前缀与 dev worker 隔离
+const QUEUE_PREFIX = process.env.QUEUE_PREFIX ?? "bull";
+
 function createQueue<T>(name: string): Queue<T> {
   return new Queue(name, {
+    prefix: QUEUE_PREFIX,
     connection: getBullConnection(),
     defaultJobOptions: {
       attempts: 3,

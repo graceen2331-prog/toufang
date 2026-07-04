@@ -13,7 +13,7 @@ async function main() {
       console.log(`[worker] 执行步骤 run=${runId} step=${stepKey} attempt=${job.attemptsMade + 1}`);
       await executeStep(tenantId, runId, stepKey);
     },
-    { connection: getBullConnection(), concurrency: 5 },
+    { connection: getBullConnection(), concurrency: 5, prefix: process.env.QUEUE_PREFIX ?? "bull" },
   );
 
   workflowWorker.on("failed", (job, err) => {
