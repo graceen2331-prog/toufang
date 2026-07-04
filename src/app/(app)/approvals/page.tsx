@@ -27,6 +27,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { StatusTag } from "@/components/shared/status-tag";
+import { ApprovalPayloadSummary } from "@/features/approvals/components/approval-payload-summary";
 import { useApprovals, useDecideApproval } from "@/features/approvals/queries";
 import { useCursorPagination, useUrlFilters } from "@/lib/list-state";
 import { CHECKPOINT_STATUS } from "@/shared/constants/status";
@@ -164,7 +165,6 @@ function ApprovalCard({ checkpoint }: { checkpoint: CheckpointDto }) {
   const [rejectReason, setRejectReason] = useState("");
 
   const isPending = checkpoint.status === "pending";
-  const hasPayload = Object.keys(checkpoint.payload).length > 0;
 
   return (
     <Card className="py-4">
@@ -185,11 +185,7 @@ function ApprovalCard({ checkpoint }: { checkpoint: CheckpointDto }) {
           {checkpoint.summary && (
             <p className="text-sm text-muted-foreground">{checkpoint.summary}</p>
           )}
-          {hasPayload && (
-            <pre className="max-h-48 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">
-              {JSON.stringify(checkpoint.payload, null, 2)}
-            </pre>
-          )}
+          <ApprovalPayloadSummary checkpoint={checkpoint} />
           <p className="text-xs text-muted-foreground">
             创建于 {format(new Date(checkpoint.created_at), "yyyy-MM-dd HH:mm")}
           </p>
