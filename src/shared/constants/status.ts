@@ -22,7 +22,7 @@ export interface StateMachine {
 // Campaign（17 态，线性主流程 + 取消/归档）
 // ---------------------------------------------------------------
 
-const CAMPAIGN_PIPELINE = [
+export const CAMPAIGN_PIPELINE = [
   "draft",
   "strategy",
   "research",

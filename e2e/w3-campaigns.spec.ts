@@ -31,19 +31,15 @@ test.describe("Campaign 域", () => {
     await page.getByRole("button", { name: /创建/ }).click();
     await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]+/, { timeout: 10_000 });
 
-    // 推进状态 draft → strategy（按钮文案以实现为准：状态推进入口）
-    await page.getByRole("button", { name: /推进|变更状态/ }).click();
-    await page.getByRole("menuitem", { name: "策略制定" }).click();
-    // 可能有确认框
-    const confirmBtn = page.getByRole("button", { name: "确认" });
-    if (await confirmBtn.isVisible().catch(() => false)) {
-      await confirmBtn.click();
-    }
+    // 主流程推进：draft → strategy
+    await page.getByRole("button", { name: /推进到「策略」/ }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "确认推进" }).click();
     await expect(page.getByText("策略制定").first()).toBeVisible({ timeout: 10_000 });
 
-    // 时间线
-    await page.getByRole("tab", { name: "时间线" }).click();
-    await expect(page.getByText("草稿").first()).toBeVisible();
+    // 概览里的状态历史应记录真实推进事件
+    const historyCard = page.locator('[data-slot="card"]').filter({ hasText: "状态历史" });
+    await expect(historyCard.getByText("草稿").first()).toBeVisible();
+    await expect(historyCard.getByText("策略制定").first()).toBeVisible();
   });
 
   test("详情页达人管道展示子状态", async ({ page }) => {
