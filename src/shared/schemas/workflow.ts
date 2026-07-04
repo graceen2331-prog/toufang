@@ -105,6 +105,16 @@ export const STEP_KEY_LABELS: Record<string, string> = {
   gather_context: "汇集上下文",
   generate_strategy: "生成策略草案",
   apply_strategy: "落地策略版本",
+  generate_research: "生成研究报告",
+  save_research: "保存研究成果",
+  search_candidates: "库内候选检索",
+  match_creators: "AI 匹配评估",
+  apply_candidates: "写入候选池",
+  collect_candidates: "收集待评分候选",
+  score_creators: "AI 六维评分",
+  apply_scores: "落分与状态推进",
+  generate_brief: "生成 Brief 草案",
+  apply_brief: "创建 Brief 版本",
 };
 
 /** 成本显示：microcents(美分百万分之一) → 美元字符串 */

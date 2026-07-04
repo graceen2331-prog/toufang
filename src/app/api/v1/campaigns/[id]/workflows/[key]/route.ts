@@ -5,7 +5,7 @@ import { prisma } from "@/server/db/client";
 import type { StartWorkflowResponseDto } from "@/shared/schemas/workflow";
 
 // 当前支持从 Campaign 触发的工作流
-const CAMPAIGN_WORKFLOWS = new Set(["strategy"]);
+const CAMPAIGN_WORKFLOWS = new Set(["strategy", "research", "creator_discovery", "creator_scoring", "brief"]);
 
 export const POST = createApiHandler({
   permission: "ai:run",
