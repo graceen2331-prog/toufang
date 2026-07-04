@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronsUpDown, LogOut, ShieldCheck, Sparkles } from "lucide-react";
+import { ChevronsUpDown, LogOut, ShieldCheck } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,11 +25,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: me, isLoading } = useMe();
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-background text-foreground">
       <Sidebar permissions={me?.permissions ?? []} loading={isLoading} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 px-5 py-5 lg:px-7 lg:py-6">{children}</main>
       </div>
     </div>
   );
@@ -39,16 +39,23 @@ function Sidebar({ permissions, loading }: { permissions: string[]; loading: boo
   const pathname = usePathname();
 
   return (
-    <aside className="sticky top-0 flex h-screen w-56 shrink-0 flex-col bg-sidebar text-sidebar-foreground max-md:hidden">
-      <div className="flex h-14 items-center gap-2 px-4 font-semibold">
-        <Sparkles className="size-5 text-sidebar-primary" />
-        <span>KOL Marketing OS</span>
+    <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground max-md:hidden">
+      <div className="px-4 py-5">
+        <Link href="/dashboard" className="flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-lg bg-sidebar-primary text-base font-semibold text-sidebar-primary-foreground shadow-[0_12px_26px_oklch(0.21_0.08_165_/_0.35)]">
+            K
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold leading-5">KOL Marketing OS</span>
+            <span className="mt-0.5 block text-xs text-sidebar-foreground/55">投放运营智能中台</span>
+          </span>
+        </Link>
       </div>
-      <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-2">
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
         {loading ? (
           <div className="space-y-2 px-2">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full bg-sidebar-accent" />
+              <Skeleton key={i} className="h-8 w-full rounded-md bg-sidebar-accent" />
             ))}
           </div>
         ) : (
@@ -62,11 +69,11 @@ function Sidebar({ permissions, loading }: { permissions: string[]; loading: boo
             return (
               <div key={gi}>
                 {group.title && (
-                  <div className="px-3 pb-1 text-xs font-medium text-sidebar-foreground/50">
+                  <div className="px-2.5 pb-2 text-[11px] font-medium text-sidebar-foreground/45">
                     {group.title}
                   </div>
                 )}
-                <ul className="space-y-0.5">
+                <ul className="space-y-1">
                   {items.map((item) => {
                     const active =
                       pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -75,13 +82,13 @@ function Sidebar({ permissions, loading }: { permissions: string[]; loading: boo
                         <Link
                           href={item.href}
                           className={cn(
-                            "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
+                            "relative flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition-colors",
                             active
-                              ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                              : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_3px_0_0_var(--sidebar-primary)]"
+                              : "text-sidebar-foreground/72 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
                           )}
                         >
-                          <item.icon className="size-4 shrink-0" />
+                          <item.icon className={cn("size-4 shrink-0", active ? "text-sidebar-primary" : "text-sidebar-foreground/45")} />
                           {item.title}
                         </Link>
                       </li>
@@ -93,6 +100,10 @@ function Sidebar({ permissions, loading }: { permissions: string[]; loading: boo
           })
         )}
       </nav>
+      <div className="border-t border-sidebar-border px-4 py-4 text-xs leading-5 text-sidebar-foreground/45">
+        <div className="font-medium text-sidebar-foreground/70">GlowLab 演示空间</div>
+        <div>AI 输出与审批门已接入审计链路</div>
+      </div>
     </aside>
   );
 }
@@ -106,12 +117,12 @@ function Topbar() {
   const multiOrg = (me?.memberships.length ?? 0) > 1;
 
   return (
-    <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-background/95 px-6 backdrop-blur">
+    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/88 px-5 backdrop-blur-xl lg:px-7">
       <div>
         {me && multiOrg ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-1.5 font-medium">
+              <Button variant="outline" size="sm" className="h-8 rounded-md border-foreground/10 bg-card/75 gap-1.5 font-medium shadow-sm">
                 {me.org?.name}
                 <ChevronsUpDown className="size-3.5 text-muted-foreground" />
               </Button>
@@ -134,14 +145,14 @@ function Topbar() {
           <span className="text-sm font-medium">{me?.org?.name}</span>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         {me && roleHasPermission(me.permissions, "approval:read") && <ApprovalsBell />}
         {me && <NotificationBell />}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <button className="flex items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <Avatar className="size-8">
-                <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
                   {initials}
                 </AvatarFallback>
               </Avatar>
@@ -170,7 +181,7 @@ function ApprovalsBell() {
   const pending = data?.pending ?? 0;
 
   return (
-    <Button variant="ghost" size="icon" className="relative" asChild>
+    <Button variant="ghost" size="icon" className="relative rounded-md" asChild>
       <Link href="/approvals" aria-label="审批中心">
         <ShieldCheck className="size-5" />
         {pending > 0 && (

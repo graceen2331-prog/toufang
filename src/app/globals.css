@@ -64,15 +64,15 @@
   --card-foreground: oklch(0.19 0.015 262);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.19 0.015 262);
-  /* 品牌主色：靛蓝 */
-  --primary: oklch(0.51 0.2 268);
-  --primary-foreground: oklch(0.985 0.005 268);
-  --secondary: oklch(0.955 0.008 255);
-  --secondary-foreground: oklch(0.3 0.03 265);
-  --muted: oklch(0.96 0.006 250);
-  --muted-foreground: oklch(0.52 0.02 258);
-  --accent: oklch(0.94 0.02 265);
-  --accent-foreground: oklch(0.3 0.05 265);
+  /* 品牌主色：深松绿，服务于美妆投放运营的稳健感 */
+  --primary: oklch(0.45 0.11 165);
+  --primary-foreground: oklch(0.985 0.006 165);
+  --secondary: oklch(0.955 0.008 170);
+  --secondary-foreground: oklch(0.25 0.035 170);
+  --muted: oklch(0.96 0.006 160);
+  --muted-foreground: oklch(0.5 0.018 170);
+  --accent: oklch(0.935 0.018 165);
+  --accent-foreground: oklch(0.24 0.055 165);
   --destructive: oklch(0.577 0.215 27);
   --success: oklch(0.6 0.14 155);
   --success-foreground: oklch(0.985 0 0);
@@ -82,21 +82,21 @@
   --info-foreground: oklch(0.985 0 0);
   --border: oklch(0.915 0.008 255);
   --input: oklch(0.915 0.008 255);
-  --ring: oklch(0.51 0.2 268 / 45%);
-  --chart-1: oklch(0.51 0.2 268);
-  --chart-2: oklch(0.6 0.13 240);
+  --ring: oklch(0.45 0.11 165 / 45%);
+  --chart-1: oklch(0.45 0.11 165);
+  --chart-2: oklch(0.56 0.14 292);
   --chart-3: oklch(0.6 0.14 155);
   --chart-4: oklch(0.72 0.15 70);
-  --chart-5: oklch(0.55 0.18 310);
+  --chart-5: oklch(0.58 0.12 225);
   --radius: 0.5rem;
-  --sidebar: oklch(0.23 0.025 265);
-  --sidebar-foreground: oklch(0.92 0.008 255);
-  --sidebar-primary: oklch(0.58 0.19 268);
-  --sidebar-primary-foreground: oklch(0.985 0.005 268);
-  --sidebar-accent: oklch(0.3 0.03 265);
-  --sidebar-accent-foreground: oklch(0.97 0.005 255);
-  --sidebar-border: oklch(0.32 0.03 265);
-  --sidebar-ring: oklch(0.58 0.19 268 / 50%);
+  --sidebar: oklch(0.2 0.035 165);
+  --sidebar-foreground: oklch(0.9 0.012 160);
+  --sidebar-primary: oklch(0.6 0.14 165);
+  --sidebar-primary-foreground: oklch(0.985 0.006 165);
+  --sidebar-accent: oklch(0.27 0.045 165);
+  --sidebar-accent-foreground: oklch(0.97 0.008 160);
+  --sidebar-border: oklch(0.31 0.04 165);
+  --sidebar-ring: oklch(0.6 0.14 165 / 50%);
 }
 
 /* 暗色模式：token 结构预留，本期不提供切换入口 */
@@ -146,6 +146,11 @@
   }
   body {
     @apply bg-background text-foreground font-sans;
+    background-image:
+      linear-gradient(180deg, color-mix(in oklch, var(--background), white 55%), var(--background) 22rem),
+      linear-gradient(90deg, color-mix(in oklch, var(--primary), transparent 96%) 1px, transparent 1px),
+      linear-gradient(180deg, color-mix(in oklch, var(--primary), transparent 96%) 1px, transparent 1px);
+    background-size: auto, 48px 48px, 48px 48px;
   }
   /* 数字等宽，指标/金额对齐 */
   .tabular-nums,
