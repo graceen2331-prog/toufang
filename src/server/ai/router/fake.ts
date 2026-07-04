@@ -154,6 +154,12 @@ const FIXTURES: Record<string, unknown> = {
     data_limitations: ["部分平台缺少收入与成本字段", "达人级归因仍有滞后"],
     requires_approval: true,
   },
+  "knowledge.answer": {
+    answer:
+      "根据知识库片段，历史美妆 Campaign 更适合采用成分实测内容承接信任，并用购物车 CTA 补齐转化链路。 [1]",
+    citations: [{ chunk_id: "chunk-1", quote: "成分实测内容更适合承担信任背书" }],
+    confidence: 0.82,
+  },
   "strategy.generate": {
     summary:
       "以「成分实证 + 场景种草」双线策略切入双十一大促周期：头部达人建立信任背书，腰部达人批量种草扩散，尾部素人晒单营造氛围。",

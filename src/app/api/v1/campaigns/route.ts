@@ -11,6 +11,7 @@ export const GET = createApiHandler({
       { orgId: ctx.auth.orgId, userId: ctx.auth.userId },
       {
         ...query,
+        q: ctx.searchParams.get("q"),
         status: ctx.searchParams.get("status"),
         brandId: ctx.searchParams.get("brand_id"),
       },

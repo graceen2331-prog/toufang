@@ -13,9 +13,10 @@ async function loginAsAdmin(page: Page) {
 test.describe("Campaign 域", () => {
   test("列表展示 seed Campaign", async ({ page }) => {
     await loginAsAdmin(page);
-    await page.getByRole("link", { name: "Campaign" }).click();
+    await page.goto("/campaigns?q=焕亮");
     await expect(page).toHaveURL(/\/campaigns/);
     await expect(page.getByText("焕亮维C精华 双十一种草战役")).toBeVisible();
+    await page.goto("/campaigns?q=UT-1");
     await expect(page.getByText("UT-1 跑鞋城市轻越野首发")).toBeVisible();
   });
 
@@ -47,7 +48,7 @@ test.describe("Campaign 域", () => {
 
   test("详情页达人管道展示子状态", async ({ page }) => {
     await loginAsAdmin(page);
-    await page.goto("/campaigns");
+    await page.goto("/campaigns?q=焕亮");
     await page.getByText("焕亮维C精华 双十一种草战役").click();
     await page.getByRole("tab", { name: "达人" }).click();
     await expect(page.getByText("谈判中").first()).toBeVisible();

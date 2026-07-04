@@ -69,6 +69,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { title: "品牌与产品", href: "/brands", icon: Package, permission: "brand:read" },
       { title: "组织管理", href: "/admin/users", icon: Users, permission: "admin:users" },
+      { title: "AI 设置", href: "/admin/ai-settings", icon: Bot, permission: "admin:ai_settings" },
+      { title: "组织设置", href: "/admin/organization", icon: Settings, permission: "admin:users" },
       { title: "审计日志", href: "/audit-logs", icon: ScrollText, permission: "admin:audit" },
       { title: "设置", href: "/settings", icon: Settings },
     ],
@@ -86,6 +88,13 @@ export const IMPLEMENTED_ROUTES = new Set([
   "/contracts",
   "/analytics",
   "/reports",
+  "/knowledge",
   "/ai-runs",
   "/approvals",
+  "/notifications",
+  "/admin/users",
+  "/admin/ai-settings",
+  "/admin/organization",
+  "/audit-logs",
+  "/settings",
 ]);

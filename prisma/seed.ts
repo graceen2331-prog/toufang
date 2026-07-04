@@ -8,6 +8,7 @@ import { SYSTEM_ROLES } from "../src/shared/constants/permissions";
 import { seedCreators } from "./seed-creators";
 import { seedCampaigns } from "./seed-campaigns";
 import { seedContentAnalytics } from "./seed-content-analytics";
+import { seedKnowledge } from "./seed-knowledge";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
@@ -54,7 +55,11 @@ async function upsertMembership(tenantId: string, userId: string, roleId: string
 
 async function main() {
   console.log("[seed] 开始写入演示数据…");
-  const passwordHash = await hash(DEMO_PASSWORD, { memoryCost: 19456, timeCost: 2, parallelism: 1 });
+  const passwordHash = await hash(DEMO_PASSWORD, {
+    memoryCost: 19456,
+    timeCost: 2,
+    parallelism: 1,
+  });
 
   // ===== 组织一：星澜传媒（主演示组织） =====
   const org = await upsertOrg("星澜传媒", "xinglan");
@@ -164,6 +169,9 @@ async function main() {
 
   // ===== 内容审核与分析（seed v4）=====
   await seedContentAnalytics(prisma, org.id, admin.id);
+
+  // ===== 知识库 / RAG + 通知 / 审计（seed v5）=====
+  await seedKnowledge(prisma, org.id, admin.id);
 
   // ===== 组织二：北辰品牌部（验证租户隔离与多组织切换） =====
   const org2 = await upsertOrg("北辰品牌部", "beichen");

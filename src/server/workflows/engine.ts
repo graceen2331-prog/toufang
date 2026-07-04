@@ -137,6 +137,57 @@ async function setStepStatus(
   await publishWorkflowEvent(runId, { type: "step_status", step_key: stepKey, step_status: status });
 }
 
+async function notifyWorkflowUser(input: {
+  tenantId: string;
+  userId: string | null;
+  type: string;
+  title: string;
+  body?: string | null;
+  linkUrl?: string | null;
+  priority?: string;
+}): Promise<void> {
+  if (!input.userId) return;
+  try {
+    const { createNotificationForUser } = await import("@/server/modules/notification/notification.service");
+    await createNotificationForUser({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      type: input.type,
+      title: input.title,
+      body: input.body,
+      linkUrl: input.linkUrl,
+      priority: input.priority,
+    });
+  } catch (err) {
+    console.error("[workflow] 通知写入失败", err);
+  }
+}
+
+async function notifyCheckpointRole(input: {
+  tenantId: string;
+  roleKey: string | null;
+  title: string;
+  body?: string | null;
+  linkUrl?: string | null;
+  priority?: string;
+}): Promise<void> {
+  if (!input.roleKey) return;
+  try {
+    const { notifyRole } = await import("@/server/modules/notification/notification.service");
+    await notifyRole({
+      tenantId: input.tenantId,
+      roleKey: input.roleKey,
+      type: "approval_pending",
+      title: input.title,
+      body: input.body,
+      linkUrl: input.linkUrl,
+      priority: input.priority,
+    });
+  } catch (err) {
+    console.error("[workflow] 审批通知写入失败", err);
+  }
+}
+
 async function collectOutputs(runId: string): Promise<Record<string, unknown>> {
   const steps = await prisma.workflowStep.findMany({
     where: { runId, status: "completed" },
@@ -185,7 +236,7 @@ export async function executeStep(tenantId: string, runId: string, stepKey: stri
 
   if (stepDef.checkpoint) {
     const cp = stepDef.checkpoint;
-    await prisma.humanCheckpoint.create({
+    const checkpoint = await prisma.humanCheckpoint.create({
       data: {
         tenantId,
         workflowRunId: runId,
@@ -200,6 +251,14 @@ export async function executeStep(tenantId: string, runId: string, stepKey: stri
         assigneeRole: cp.assigneeRole ?? null,
         createdBy: run.createdBy,
       },
+    });
+    await notifyCheckpointRole({
+      tenantId,
+      roleKey: checkpoint.assigneeRole,
+      title: checkpoint.title,
+      body: checkpoint.summary,
+      linkUrl: "/approvals",
+      priority: checkpoint.priority,
     });
     await setRunStatus(runId, "waiting_for_human");
     return;
@@ -227,6 +286,14 @@ async function advanceAfter(tenantId: string, runId: string, completedStepKey: s
     output: outputs as object,
     completedAt: new Date(),
   });
+  await notifyWorkflowUser({
+    tenantId,
+    userId: run.createdBy,
+    type: "workflow_completed",
+    title: `工作流已完成：${def.label}`,
+    body: run.subjectType && run.subjectId ? `${run.subjectType} / ${run.subjectId}` : null,
+    linkUrl: `/ai-runs/${runId}`,
+  });
   if (def.onCompleted) {
     await def.onCompleted({ tenantId, runId, run, outputs, createdBy: run.createdBy });
   }
@@ -239,6 +306,7 @@ export async function onStepFailed(
   stepKey: string,
   error: string,
 ): Promise<void> {
+  const run = await prisma.workflowRun.findFirst({ where: { id: runId, tenantId } });
   const stepRow = await prisma.workflowStep.findFirst({ where: { runId, stepKey } });
   if (stepRow) {
     await setStepStatus(runId, stepRow.id, stepKey, "failed", {
@@ -247,6 +315,15 @@ export async function onStepFailed(
     });
   }
   await setRunStatus(runId, "failed", { failureReason: error, completedAt: new Date() });
+  await notifyWorkflowUser({
+    tenantId,
+    userId: run?.createdBy ?? null,
+    type: "workflow_failed",
+    title: `工作流失败：${run?.workflowKey ?? stepKey}`,
+    body: error,
+    linkUrl: `/ai-runs/${runId}`,
+    priority: "high",
+  });
 }
 
 /** 手动重试失败的 run：重置失败步骤 → 重新入队 */

@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { IMPLEMENTED_ROUTES, NAV_GROUPS } from "@/components/layout/nav-config";
 import { usePendingApprovalCount } from "@/features/approvals/queries";
 import { useLogout, useMe, useSwitchOrg } from "@/features/auth/queries";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
 import { roleHasPermission } from "@/shared/constants/permissions";
 import { cn } from "@/lib/utils";
 
@@ -135,6 +136,7 @@ function Topbar() {
       </div>
       <div className="flex items-center gap-2">
         {me && roleHasPermission(me.permissions, "approval:read") && <ApprovalsBell />}
+        {me && <NotificationBell />}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">

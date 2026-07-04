@@ -185,6 +185,34 @@ async function seedOutreachContracts(
   });
   if (!campaign) return;
 
+  const budgetCheckpoint = await prisma.humanCheckpoint.findFirst({
+    where: {
+      tenantId,
+      type: "budget",
+      entityType: "campaign",
+      entityId: campaign.id,
+      status: "pending",
+      title: "双十一战役预算调整：头部达人费用上调 ¥3 万",
+    },
+  });
+  if (!budgetCheckpoint) {
+    await prisma.humanCheckpoint.create({
+      data: {
+        tenantId,
+        type: "budget",
+        status: "pending",
+        title: "双十一战役预算调整：头部达人费用上调 ¥3 万",
+        summary: "「林小鹿日记」报价高于预估，需上调头部达人预算项。",
+        entityType: "campaign",
+        entityId: campaign.id,
+        payload: { from_cents: 30_000_000, to_cents: 33_000_000, reason: "头部达人报价上浮" },
+        priority: "high",
+        assigneeRole: "manager",
+        createdBy,
+      },
+    });
+  }
+
   const campaignCreators = await prisma.campaignCreator.findMany({
     where: {
       tenantId,
