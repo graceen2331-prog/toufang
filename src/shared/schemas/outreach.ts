@@ -82,6 +82,22 @@ export interface OutreachThreadListItemDto {
   created_at: string;
 }
 
+export interface OutreachCandidateDto {
+  campaign_creator_id: string;
+  campaign_id: string;
+  creator_id: string;
+  creator_name: string;
+  status: string;
+  role: string | null;
+  quoted_price_cents: number | null;
+  agreed_price_cents: number | null;
+  can_create_thread: boolean;
+  blocked_reason: string | null;
+  existing_thread_id: string | null;
+  existing_thread_status: string | null;
+  existing_thread_subject: string | null;
+}
+
 export interface OutreachMessageDto {
   id: string;
   direction: string;

@@ -90,6 +90,18 @@ export const outreachRepository = {
     });
   },
 
+  async listThreadsByCampaignCreatorIds(ctx: TenantCtx, campaignCreatorIds: string[]) {
+    if (campaignCreatorIds.length === 0) return [];
+    return prisma.outreachThread.findMany({
+      where: {
+        tenantId: ctx.orgId,
+        campaignCreatorId: { in: campaignCreatorIds },
+        deletedAt: null,
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+  },
+
   async createThread(ctx: TenantCtx, data: Omit<Prisma.OutreachThreadUncheckedCreateInput, "tenantId">) {
     return prisma.outreachThread.create({
       data: { ...data, tenantId: ctx.orgId, createdBy: ctx.userId ?? null },

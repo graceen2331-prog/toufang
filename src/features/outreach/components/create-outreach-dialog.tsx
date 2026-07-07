@@ -32,13 +32,15 @@ import { useCreateOutreachThread } from "@/features/outreach/queries";
 export function CreateOutreachDialog({
   open,
   onOpenChange,
+  initialCampaignId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialCampaignId?: string;
 }) {
   const createThread = useCreateOutreachThread();
   const { data: campaigns } = useCampaigns({});
-  const [campaignId, setCampaignId] = useState("");
+  const [campaignId, setCampaignId] = useState(initialCampaignId ?? "");
   const [campaignCreatorId, setCampaignCreatorId] = useState("");
   const [channel, setChannel] = useState("email");
   const [subject, setSubject] = useState("");
@@ -46,7 +48,7 @@ export function CreateOutreachDialog({
   const handleClose = (next: boolean) => {
     onOpenChange(next);
     if (!next) {
-      setCampaignId("");
+      setCampaignId(initialCampaignId ?? "");
       setCampaignCreatorId("");
       setChannel("email");
       setSubject("");

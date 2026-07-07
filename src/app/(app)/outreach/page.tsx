@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { StatusTag } from "@/components/shared/status-tag";
 import { useCampaigns } from "@/features/campaigns/queries";
+import { CampaignOutreachCandidates } from "@/features/outreach/components/campaign-outreach-candidates";
 import { CreateOutreachDialog } from "@/features/outreach/components/create-outreach-dialog";
 import { THREAD_STATUS } from "@/features/outreach/constants";
 import { useOutreachThreads } from "@/features/outreach/queries";
@@ -141,6 +142,8 @@ function OutreachPageInner() {
         )}
       </div>
 
+      {filters.campaign_id && <CampaignOutreachCandidates campaignId={filters.campaign_id} />}
+
       <AsyncBoundary
         isLoading={isLoading}
         isError={isError}
@@ -166,7 +169,12 @@ function OutreachPageInner() {
         />
       </AsyncBoundary>
 
-      <CreateOutreachDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CreateOutreachDialog
+        key={filters.campaign_id || "all-campaigns"}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        initialCampaignId={filters.campaign_id || undefined}
+      />
     </div>
   );
 }

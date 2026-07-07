@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { apiFetch, apiFetchList } from "@/lib/api";
 import type {
   NegotiationRecordDto,
+  OutreachCandidateDto,
   OutreachMessageDto,
   OutreachThreadDetailDto,
   OutreachThreadListItemDto,
@@ -19,6 +20,7 @@ export interface OutreachFilters {
 export const outreachKeys = {
   all: ["outreach"] as const,
   list: (params: OutreachFilters) => ["outreach", "list", params] as const,
+  candidates: (campaignId: string) => ["outreach", "candidates", campaignId] as const,
   detail: (id: string) => ["outreach", "detail", id] as const,
 };
 
@@ -42,6 +44,17 @@ export function useOutreachThread(id: string) {
   return useQuery({
     queryKey: outreachKeys.detail(id),
     queryFn: () => apiFetch<OutreachThreadDetailDto>(`/outreach/${id}`),
+  });
+}
+
+export function useOutreachCandidates(campaignId: string) {
+  return useQuery({
+    queryKey: outreachKeys.candidates(campaignId),
+    queryFn: () =>
+      apiFetch<OutreachCandidateDto[]>("/outreach/candidates", {
+        params: { campaign_id: campaignId },
+      }),
+    enabled: campaignId.length > 0,
   });
 }
 

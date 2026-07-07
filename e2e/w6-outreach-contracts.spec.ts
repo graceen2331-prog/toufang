@@ -6,8 +6,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function loginAsAdmin(page: Page) {
   await page.goto("/login");
-  await page.getByLabel("邮箱").fill("admin@demo.com");
-  await page.getByLabel("密码").fill("demo1234");
+  await page.getByRole("button", { name: /管理员.*admin@demo\.com/ }).click();
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 }
@@ -54,6 +53,24 @@ test.describe("外联 / 谈判 / 合同", () => {
     await page.getByRole("button", { name: "批准" }).first().click();
     await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
     await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("从 Campaign 上下文进入外联页时直接展示筛选达人", async ({ page }) => {
+    await loginAsAdmin(page);
+
+    await page.goto("/campaigns?q=焕亮");
+    await page.getByText("焕亮维C精华 双十一种草战役").click();
+    await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]+/, { timeout: 10_000 });
+    const campaignId = page.url().match(/\/campaigns\/([0-9a-f-]+)/)?.[1];
+    expect(campaignId).toBeTruthy();
+
+    await page.goto(`/outreach?campaign_id=${campaignId}`);
+    const candidates = page.locator("section").filter({ hasText: "当前 Campaign 可外联达人" });
+    await expect(candidates).toBeVisible({ timeout: 10_000 });
+    await expect(candidates.getByText("已按 Campaign 自动筛选")).toBeVisible();
+    await expect(candidates.getByText(/位/)).toBeVisible();
+    await expect(candidates.getByRole("button", { name: "打开会话" }).first()).toBeVisible();
+    await expect(candidates.getByText("需先把达人推进到已批准或执行中状态").first()).toBeVisible();
   });
 
   test("合同与付款：列表可见 → 打开详情 → 付款记录区可见", async ({ page }) => {

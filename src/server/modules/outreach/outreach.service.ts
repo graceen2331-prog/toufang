@@ -14,6 +14,7 @@ import {
 import { OUTREACH_MESSAGE_STATUS, assertTransition } from "@/shared/constants/status";
 import type {
   NegotiationRecordDto,
+  OutreachCandidateDto,
   OutreachMessageDto,
   OutreachThreadDetailDto,
   OutreachThreadListItemDto,
@@ -91,6 +92,46 @@ export async function listThreads(
     items.map((t) => t.id),
   );
   return { items: items.map((t) => threadToListItem(t, pendingSet)), pagination };
+}
+
+export async function listOutreachCandidates(
+  ctx: TenantCtx,
+  campaignId: string,
+): Promise<OutreachCandidateDto[]> {
+  const campaign = await campaignRepository.findById(ctx, campaignId);
+  if (!campaign) throw new ApiError("RESOURCE_NOT_FOUND", "Campaign 不存在");
+
+  const creators = await campaignRepository.listCreators(ctx, campaignId);
+  const threads = await outreachRepository.listThreadsByCampaignCreatorIds(
+    ctx,
+    creators.map((cc) => cc.id),
+  );
+  const threadByCampaignCreator = new Map<string, (typeof threads)[number]>();
+  for (const thread of threads) {
+    if (!threadByCampaignCreator.has(thread.campaignCreatorId)) {
+      threadByCampaignCreator.set(thread.campaignCreatorId, thread);
+    }
+  }
+
+  return creators.map((cc) => {
+    const thread = threadByCampaignCreator.get(cc.id);
+    const isContactable = CONTACTABLE_STATUSES.has(cc.status);
+    return {
+      campaign_creator_id: cc.id,
+      campaign_id: cc.campaignId,
+      creator_id: cc.creatorId,
+      creator_name: cc.creator.displayName,
+      status: cc.status,
+      role: cc.role,
+      quoted_price_cents: cc.quotedPriceCents,
+      agreed_price_cents: cc.agreedPriceCents,
+      can_create_thread: isContactable && !thread,
+      blocked_reason: isContactable ? null : "需先把达人推进到已批准或执行中状态",
+      existing_thread_id: thread?.id ?? null,
+      existing_thread_status: thread?.status ?? null,
+      existing_thread_subject: thread?.subject ?? null,
+    };
+  });
 }
 
 export async function getThread(ctx: TenantCtx, id: string): Promise<OutreachThreadDetailDto> {
