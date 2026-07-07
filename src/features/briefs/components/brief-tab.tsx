@@ -58,6 +58,7 @@ import {
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { StatusTag } from "@/components/shared/status-tag";
 import { WorkflowProgress } from "@/components/shared/workflow-progress";
+import { normalizeBriefContent } from "@/features/briefs/brief-content";
 import {
   briefKeys,
   useBriefVersion,
@@ -100,6 +101,7 @@ export function BriefTab({ campaignId }: { campaignId: string }) {
       <CardContent>
         <WorkflowProgress
           runId={activeRunId}
+          inlineApproval
           onFinished={() => {
             void queryClient.invalidateQueries({ queryKey: briefKeys.byCampaign(campaignId) });
           }}
@@ -133,7 +135,9 @@ export function BriefTab({ campaignId }: { campaignId: string }) {
   }
 
   const locked = brief.status === "locked";
-  const content = brief.current_version?.content ?? null;
+  const content = brief.current_version
+    ? normalizeBriefContent(brief.current_version.content)
+    : null;
 
   return (
     <div className="space-y-4">
@@ -443,7 +447,9 @@ function BriefVersionDialog({
           <DialogDescription>历史版本为只读快照，如需修改请基于当前版本编辑。</DialogDescription>
         </DialogHeader>
         {isLoading && <p className="text-sm text-muted-foreground">加载中…</p>}
-        {version && <BriefContentView content={version.content} version={version} />}
+        {version && (
+          <BriefContentView content={normalizeBriefContent(version.content)} version={version} />
+        )}
       </DialogContent>
     </Dialog>
   );

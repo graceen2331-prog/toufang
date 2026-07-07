@@ -104,6 +104,7 @@ export function PipelineTab({
           <CardContent>
             <WorkflowProgress
               runId={activeRun.runId}
+              inlineApproval
               onFinished={() => {
                 void queryClient.invalidateQueries({ queryKey: campaignKeys.all });
                 void queryClient.invalidateQueries({ queryKey: workflowKeys.all });

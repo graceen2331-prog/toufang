@@ -9,10 +9,153 @@ export interface CheckpointListParams {
   order: "asc" | "desc";
   status: string | null;
   type: string | null;
+  campaignId?: string | null;
+}
+
+export interface CampaignCheckpointRefs {
+  campaignCreatorIds: string[];
+  contentAssetIds: string[];
+  contractIds: string[];
+  outreachMessageIds: string[];
+  paymentRecordIds: string[];
+  reportIds: string[];
+}
+
+function idsCondition(ids: string[]): { in: string[] } | undefined {
+  return ids.length > 0 ? { in: ids } : undefined;
+}
+
+export function buildCampaignCheckpointWhere(
+  campaignId: string,
+  refs: CampaignCheckpointRefs,
+): Prisma.HumanCheckpointWhereInput {
+  const workflowSubjects: Prisma.WorkflowRunWhereInput[] = [
+    { subjectType: "campaign", subjectId: campaignId },
+  ];
+  const ors: Prisma.HumanCheckpointWhereInput[] = [
+    { entityType: "campaign", entityId: campaignId },
+  ];
+
+  const campaignCreatorIds = idsCondition(refs.campaignCreatorIds);
+  if (campaignCreatorIds) {
+    ors.push({ entityType: "campaign_creator", entityId: campaignCreatorIds });
+    workflowSubjects.push({ subjectType: "campaign_creator", subjectId: campaignCreatorIds });
+  }
+
+  const outreachMessageIds = idsCondition(refs.outreachMessageIds);
+  if (outreachMessageIds) {
+    ors.push({ entityType: "outreach_message", entityId: outreachMessageIds });
+  }
+
+  const contractIds = idsCondition(refs.contractIds);
+  if (contractIds) ors.push({ entityType: "contract", entityId: contractIds });
+
+  const paymentRecordIds = idsCondition(refs.paymentRecordIds);
+  if (paymentRecordIds) ors.push({ entityType: "payment_record", entityId: paymentRecordIds });
+
+  const contentAssetIds = idsCondition(refs.contentAssetIds);
+  if (contentAssetIds) {
+    ors.push({ entityType: "content_asset", entityId: contentAssetIds });
+    workflowSubjects.push({ subjectType: "content_asset", subjectId: contentAssetIds });
+  }
+
+  const reportIds = idsCondition(refs.reportIds);
+  if (reportIds) ors.push({ entityType: "report", entityId: reportIds });
+
+  ors.push({
+    workflowRun: {
+      is: {
+        OR: workflowSubjects,
+      },
+    },
+  });
+
+  return { OR: ors };
+}
+
+async function collectCampaignCheckpointRefs(
+  ctx: TenantCtx,
+  campaignId: string,
+): Promise<CampaignCheckpointRefs> {
+  const campaignCreators = await prisma.campaignCreator.findMany({
+    where: { tenantId: ctx.orgId, campaignId, deletedAt: null },
+    select: { id: true },
+  });
+  const campaignCreatorIds = campaignCreators.map((item) => item.id);
+
+  const [threads, contentAssets, contracts, reports] = await Promise.all([
+    campaignCreatorIds.length
+      ? prisma.outreachThread.findMany({
+          where: {
+            tenantId: ctx.orgId,
+            campaignCreatorId: { in: campaignCreatorIds },
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+    campaignCreatorIds.length
+      ? prisma.contentAsset.findMany({
+          where: {
+            tenantId: ctx.orgId,
+            campaignCreatorId: { in: campaignCreatorIds },
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+    campaignCreatorIds.length
+      ? prisma.contract.findMany({
+          where: {
+            tenantId: ctx.orgId,
+            campaignCreatorId: { in: campaignCreatorIds },
+            deletedAt: null,
+          },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+    prisma.report.findMany({
+      where: { tenantId: ctx.orgId, campaignId, deletedAt: null },
+      select: { id: true },
+    }),
+  ]);
+
+  const threadIds = threads.map((item) => item.id);
+  const contractIds = contracts.map((item) => item.id);
+  const [messages, payments] = await Promise.all([
+    threadIds.length
+      ? prisma.outreachMessage.findMany({
+          where: { tenantId: ctx.orgId, threadId: { in: threadIds }, deletedAt: null },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+    contractIds.length
+      ? prisma.paymentRecord.findMany({
+          where: { tenantId: ctx.orgId, contractId: { in: contractIds }, deletedAt: null },
+          select: { id: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    campaignCreatorIds,
+    contentAssetIds: contentAssets.map((item) => item.id),
+    contractIds,
+    outreachMessageIds: messages.map((item) => item.id),
+    paymentRecordIds: payments.map((item) => item.id),
+    reportIds: reports.map((item) => item.id),
+  };
 }
 
 export const checkpointRepository = {
   async list(ctx: TenantCtx, params: CheckpointListParams): Promise<HumanCheckpoint[]> {
+    const campaignWhere = params.campaignId
+      ? buildCampaignCheckpointWhere(
+          params.campaignId,
+          await collectCampaignCheckpointRefs(ctx, params.campaignId),
+        )
+      : {};
+
     return prisma.humanCheckpoint.findMany({
       where: {
         tenantId: ctx.orgId,
@@ -21,6 +164,7 @@ export const checkpointRepository = {
         ...(params.cursor
           ? { id: params.order === "desc" ? { lt: params.cursor } : { gt: params.cursor } }
           : {}),
+        ...campaignWhere,
       },
       orderBy: { id: params.order },
       take: params.limit + 1,

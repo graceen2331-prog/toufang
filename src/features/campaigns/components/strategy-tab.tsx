@@ -120,6 +120,7 @@ export function StrategyTab({ campaignId }: { campaignId: string }) {
           <CardContent>
             <WorkflowProgress
               runId={activeRunId}
+              inlineApproval
               onFinished={() => {
                 void queryClient.invalidateQueries({
                   queryKey: workflowKeys.strategyVersions(campaignId),

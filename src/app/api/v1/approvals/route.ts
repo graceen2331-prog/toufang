@@ -19,6 +19,7 @@ export const GET = createApiHandler({
         ...query,
         status: ctx.searchParams.get("status"),
         type: ctx.searchParams.get("type"),
+        campaignId: ctx.searchParams.get("campaign_id"),
       },
     );
     return paginated(items, pagination);

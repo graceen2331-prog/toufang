@@ -2,8 +2,15 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 
 async function login(page: Page, email = "admin@demo.com") {
   await page.goto("/login");
-  await page.getByLabel("邮箱").fill(email);
-  await page.getByLabel("密码").fill("demo1234");
+  const accountButton = page.getByRole("button", {
+    name: new RegExp(email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  });
+  if ((await accountButton.count()) > 0) {
+    await accountButton.click();
+  } else {
+    await page.locator("#email").fill(email);
+    await page.locator("#password").fill("demo1234");
+  }
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 }
@@ -28,13 +35,24 @@ async function approveFirst(page: Page, titlePattern: RegExp, timeout = 45_000) 
 }
 
 async function waitForWorkflowApproval(page: Page) {
-  await expect(page.getByRole("link", { name: "前往审批中心" })).toBeVisible({
+  await expect(page.getByText(/工作流已暂停.*(待办栏|等待人工审批)/)).toBeVisible({
     timeout: 45_000,
   });
 }
 
+async function approveInlineFromCampaign(page: Page, titlePattern: RegExp, timeout = 45_000) {
+  const rail = page.locator("aside").filter({ hasText: "当前 Campaign 待办" }).first();
+  await expect(rail).toBeVisible({ timeout: 10_000 });
+  const card = rail.locator("article").filter({ hasText: titlePattern }).first();
+  await expect(card).toBeVisible({ timeout });
+  await card.getByRole("button", { name: "批准" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
+  await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 15_000 });
+  await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]+/);
+}
+
 async function runCampaignWorkflow(page: Page, buttonIndex: number, approvalTitle: RegExp) {
-  await page.getByRole("tab", { name: "流水线" }).click();
+  await page.getByRole("tab", { name: "达人 Pipeline" }).click();
   await page.getByRole("button", { name: "运行" }).nth(buttonIndex).click();
   await waitForWorkflowApproval(page);
   await approveFirst(page, approvalTitle);
@@ -50,7 +68,7 @@ async function transitionBrief(page: Page, targetLabel: string) {
 
 async function advanceFirstCreator(page: Page, campaignUrl: string, currentLabel: string, targetLabel: string) {
   await page.goto(campaignUrl);
-  await page.getByRole("tab", { name: "达人", exact: true }).click();
+  await page.getByRole("tab", { name: "达人 Pipeline" }).click();
   const row = page.getByRole("row").filter({ hasText: currentLabel }).first();
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.getByRole("button", { name: "操作" }).click();
@@ -231,6 +249,20 @@ async function assertViewerDenied(browser: Browser) {
 }
 
 test.describe("W9 最终验收", () => {
+  test("Campaign 详情页内可直接处理当前 Campaign 审批", async ({ page }) => {
+    test.slow();
+    const suffix = Date.now().toString(36);
+    const campaignName = `内联审批验收 ${suffix}`;
+
+    await login(page);
+    await createCampaign(page, campaignName);
+    await expect(page.getByText("当前 Campaign 待办")).toBeVisible({ timeout: 10_000 });
+    await page.getByRole("tab", { name: "策略" }).click();
+    await page.getByRole("button", { name: /AI 生成策略/ }).click();
+    await waitForWorkflowApproval(page);
+    await approveInlineFromCampaign(page, new RegExp(`策略草案审批：${campaignName}`));
+  });
+
   test("端到端演示剧本：Campaign → AI → 外联合同 → 内容指标 → 报告与横切验证", async ({ page, browser }) => {
     test.setTimeout(300_000);
     const suffix = Date.now().toString(36);
@@ -254,12 +286,12 @@ test.describe("W9 最终验收", () => {
 
     await runCampaignWorkflow(page, 1, new RegExp(`达人候选名单确认：${campaignName}`));
     await page.goto(campaignUrl);
-    await page.getByRole("tab", { name: "达人", exact: true }).click();
+    await page.getByRole("tab", { name: "达人 Pipeline" }).click();
     await expect(page.getByText("候选").first()).toBeVisible({ timeout: 20_000 });
 
     await runCampaignWorkflow(page, 2, new RegExp(`达人入围名单审批：${campaignName}`));
     await page.goto(campaignUrl);
-    await page.getByRole("tab", { name: "达人", exact: true }).click();
+    await page.getByRole("tab", { name: "达人 Pipeline" }).click();
     await expect(page.getByText("已入围").first()).toBeVisible({ timeout: 20_000 });
     await advanceFirstCreator(page, campaignUrl, "已入围", "已批准");
 

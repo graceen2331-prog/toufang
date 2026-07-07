@@ -8,7 +8,10 @@ import type { CheckpointDto } from "@/shared/schemas/checkpoint";
 export interface ApprovalFilters {
   status?: string;
   type?: string;
+  campaign_id?: string;
   cursor?: string | null;
+  limit?: number;
+  refetchIntervalMs?: number;
 }
 
 export const approvalKeys = {
@@ -25,11 +28,13 @@ export function useApprovals(params: ApprovalFilters) {
         params: {
           status: params.status,
           type: params.type,
+          campaign_id: params.campaign_id,
           cursor: params.cursor,
-          limit: 20,
+          limit: params.limit ?? 20,
         },
       }),
     placeholderData: (prev) => prev,
+    refetchInterval: params.refetchIntervalMs,
   });
 }
 
