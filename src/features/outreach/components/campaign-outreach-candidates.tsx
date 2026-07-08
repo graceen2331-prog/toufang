@@ -4,8 +4,16 @@ import { useRouter } from "next/navigation";
 import { Loader2, MessageSquarePlus, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { StatusTag } from "@/components/shared/status-tag";
+import { useTransitionCampaignCreator } from "@/features/campaigns/queries";
 import { useCreateOutreachThread, useOutreachCandidates } from "@/features/outreach/queries";
 import { formatCents } from "@/lib/format";
 import { CAMPAIGN_CREATOR_STATUS } from "@/shared/constants/status";
@@ -26,6 +34,7 @@ export function CampaignOutreachCandidates({ campaignId }: { campaignId: string 
   const router = useRouter();
   const candidates = useOutreachCandidates(campaignId);
   const createThread = useCreateOutreachThread();
+  const transitionCreator = useTransitionCampaignCreator();
   const items = candidates.data ?? [];
 
   if (!campaignId) return null;
@@ -76,6 +85,7 @@ export function CampaignOutreachCandidates({ campaignId }: { campaignId: string 
         <div className="divide-y rounded-md border bg-background">
           {items.map((candidate) => {
             const price = candidatePrice(candidate);
+            const transitionTargets = CAMPAIGN_CREATOR_STATUS.transitions[candidate.status] ?? [];
             return (
               <div
                 key={candidate.campaign_creator_id}
@@ -127,9 +137,46 @@ export function CampaignOutreachCandidates({ campaignId }: { campaignId: string 
                     </Button>
                   </PermissionGate>
                 ) : (
-                  <Button variant="outline" size="sm" disabled>
-                    需先推进
-                  </Button>
+                  <PermissionGate permission="campaign:write">
+                    {transitionTargets.length > 0 ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={transitionCreator.isPending}
+                          >
+                            {transitionCreator.isPending ? "推进中…" : "推进状态"}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>推进到</DropdownMenuLabel>
+                          {transitionTargets.map((to) => (
+                            <DropdownMenuItem
+                              key={to}
+                              onClick={() =>
+                                transitionCreator.mutate(
+                                  {
+                                    campaignId,
+                                    ccId: candidate.campaign_creator_id,
+                                    to,
+                                    reason: "从外联工作台推进达人状态",
+                                  },
+                                  { onSuccess: () => void candidates.refetch() },
+                                )
+                              }
+                            >
+                              <StatusTag source={CAMPAIGN_CREATOR_STATUS} value={to} />
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      <Button variant="outline" size="sm" disabled>
+                        暂不可推进
+                      </Button>
+                    )}
+                  </PermissionGate>
                 )}
               </div>
             );

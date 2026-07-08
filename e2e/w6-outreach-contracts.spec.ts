@@ -71,6 +71,12 @@ test.describe("外联 / 谈判 / 合同", () => {
     await expect(candidates.getByText(/位/)).toBeVisible();
     await expect(candidates.getByRole("button", { name: "打开会话" }).first()).toBeVisible();
     await expect(candidates.getByText("需先把达人推进到已批准或执行中状态").first()).toBeVisible();
+    const shortlistedRow = candidates
+      .locator('div[class*="px-4"][class*="py-3"]')
+      .filter({ hasText: "已入围" })
+      .first();
+    await shortlistedRow.getByRole("button", { name: "推进状态" }).click();
+    await expect(page.getByRole("menuitem", { name: "已批准" })).toBeVisible();
   });
 
   test("合同与付款：列表可见 → 打开详情 → 付款记录区可见", async ({ page }) => {
