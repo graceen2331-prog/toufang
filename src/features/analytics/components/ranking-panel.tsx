@@ -3,6 +3,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { AnalyticsOverviewDto } from "@/shared/schemas/content-analytics";
 
+const ENTITY_TYPE_LABELS: Record<string, string> = {
+  campaign: "Campaign",
+  campaign_creator: "达人合作",
+  content_asset: "内容资产",
+};
+
 function PerformerList({
   title,
   items,
@@ -20,14 +26,21 @@ function PerformerList({
           <p className="text-sm text-muted-foreground">暂无排名数据</p>
         ) : (
           items.map((item, index) => (
-            <div key={`${item.entity_type}-${item.entity_id}`} className="flex items-center justify-between gap-3">
+            <div
+              key={`${item.entity_type}-${item.entity_id}`}
+              className="flex items-center justify-between gap-3"
+            >
               <div>
                 <p className="text-sm font-medium">
                   {index + 1}. {item.label}
                 </p>
-                <p className="text-xs text-muted-foreground">{item.entity_type}</p>
+                <p className="text-xs text-muted-foreground">
+                  {ENTITY_TYPE_LABELS[item.entity_type] ?? "业务对象"}
+                </p>
               </div>
-              <span className="text-sm tabular-nums text-muted-foreground">{Math.round(item.score)}</span>
+              <span className="text-sm tabular-nums text-muted-foreground">
+                {Math.round(item.score)}
+              </span>
             </div>
           ))
         )}

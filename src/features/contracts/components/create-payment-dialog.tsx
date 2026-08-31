@@ -10,11 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -29,10 +25,12 @@ import { yuanToCents } from "@/lib/format";
 
 export function CreatePaymentDialog({
   contractId,
+  remainingAmountCents,
   open,
   onOpenChange,
 }: {
   contractId: string;
+  remainingAmountCents: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -40,6 +38,8 @@ export function CreatePaymentDialog({
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<"bank" | "alipay" | "other">("bank");
   const [notes, setNotes] = useState("");
+  const amountCents = yuanToCents(amount);
+  const isAmountValid = amountCents > 0 && amountCents <= remainingAmountCents;
 
   const close = (next: boolean) => {
     onOpenChange(next);
@@ -60,7 +60,19 @@ export function CreatePaymentDialog({
         <FieldGroup>
           <Field>
             <FieldLabel>金额（元）</FieldLabel>
-            <Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <Input
+              inputMode="decimal"
+              value={amount}
+              max={remainingAmountCents / 100}
+              aria-describedby="payment-remaining-hint"
+              onChange={(e) => setAmount(e.target.value)}
+            />
+            <p id="payment-remaining-hint" className="text-xs text-muted-foreground">
+              剩余可付 ¥{(remainingAmountCents / 100).toLocaleString("zh-CN")}
+            </p>
+            {amount.trim() && !isAmountValid && (
+              <p className="text-xs text-destructive">请输入不超过剩余可付金额的正数。</p>
+            )}
           </Field>
           <Field>
             <FieldLabel>付款方式</FieldLabel>
@@ -85,11 +97,11 @@ export function CreatePaymentDialog({
             取消
           </Button>
           <Button
-            disabled={!amount.trim() || createPayment.isPending}
+            disabled={!isAmountValid || createPayment.isPending}
             onClick={() =>
               createPayment.mutate(
                 {
-                  amount_cents: yuanToCents(amount),
+                  amount_cents: amountCents,
                   method,
                   notes: notes || null,
                 },

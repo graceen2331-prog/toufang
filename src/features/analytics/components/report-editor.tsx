@@ -10,7 +10,11 @@ import { StatusTag } from "@/components/shared/status-tag";
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { REPORT_STATUS } from "@/shared/constants/status";
 import type { ReportDto } from "@/shared/schemas/content-analytics";
-import { useExportReport, useTransitionReport, useUpdateReport } from "@/features/analytics/queries";
+import {
+  useExportReport,
+  useTransitionReport,
+  useUpdateReport,
+} from "@/features/analytics/queries";
 
 function textArray(value: unknown): string {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string").join("\n") : "";
@@ -30,7 +34,9 @@ export function ReportEditor({ report }: { report: ReportDto | null }) {
         <CardHeader>
           <CardTitle>报告详情</CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">选择一份报告后查看正文与审批操作。</CardContent>
+        <CardContent className="text-sm text-muted-foreground">
+          选择一份报告后查看正文与审批操作。
+        </CardContent>
       </Card>
     );
   }
@@ -47,6 +53,7 @@ function ReportEditorForm({ report }: { report: ReportDto }) {
   const [narrative, setNarrative] = useState(String(report.content.narrative ?? ""));
   const [learnings, setLearnings] = useState(textArray(report.content.key_learnings));
   const [recommendations, setRecommendations] = useState(textArray(report.content.recommendations));
+  const isEditable = report.status === "draft";
 
   const content = {
     ...report.content,
@@ -65,58 +72,105 @@ function ReportEditorForm({ report }: { report: ReportDto }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {!isEditable && (
+          <div className="border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
+            {report.status === "in_review"
+              ? "报告正在审批，审批退回草稿后才能继续编辑。"
+              : "这是已冻结的正式报告。如需调整，请重新生成报告并完成审批。"}
+          </div>
+        )}
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="report-title">标题</label>
-          <Input id="report-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+          <label className="text-sm font-medium" htmlFor="report-title">
+            标题
+          </label>
+          <Input
+            id="report-title"
+            value={title}
+            disabled={!isEditable}
+            onChange={(event) => setTitle(event.target.value)}
+          />
         </div>
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="report-summary">高管摘要</label>
-          <Textarea id="report-summary" value={summary} onChange={(event) => setSummary(event.target.value)} rows={4} />
+          <label className="text-sm font-medium" htmlFor="report-summary">
+            高管摘要
+          </label>
+          <Textarea
+            id="report-summary"
+            value={summary}
+            disabled={!isEditable}
+            onChange={(event) => setSummary(event.target.value)}
+            rows={4}
+          />
         </div>
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="report-narrative">分析叙事</label>
-          <Textarea id="report-narrative" value={narrative} onChange={(event) => setNarrative(event.target.value)} rows={7} />
+          <label className="text-sm font-medium" htmlFor="report-narrative">
+            分析叙事
+          </label>
+          <Textarea
+            id="report-narrative"
+            value={narrative}
+            disabled={!isEditable}
+            onChange={(event) => setNarrative(event.target.value)}
+            rows={7}
+          />
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="report-learnings">关键学习</label>
-            <Textarea id="report-learnings" value={learnings} onChange={(event) => setLearnings(event.target.value)} rows={5} />
+            <label className="text-sm font-medium" htmlFor="report-learnings">
+              关键学习
+            </label>
+            <Textarea
+              id="report-learnings"
+              value={learnings}
+              disabled={!isEditable}
+              onChange={(event) => setLearnings(event.target.value)}
+              rows={5}
+            />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="report-recommendations">下一步建议</label>
+            <label className="text-sm font-medium" htmlFor="report-recommendations">
+              下一步建议
+            </label>
             <Textarea
               id="report-recommendations"
               value={recommendations}
+              disabled={!isEditable}
               onChange={(event) => setRecommendations(event.target.value)}
               rows={5}
             />
           </div>
         </div>
 
-        <PermissionGate permission="report:write">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              disabled={update.isPending}
-              onClick={() => update.mutate({ id: report.id, title, content })}
-            >
-              <Save className="size-4" />
-              保存
-            </Button>
-            {report.status === "draft" && (
+        {isEditable && (
+          <PermissionGate permission="report:write">
+            <div className="flex flex-wrap gap-2">
               <Button
-                disabled={transition.isPending}
-                onClick={() => transition.mutate({ id: report.id, to: "in_review" })}
+                variant="outline"
+                disabled={update.isPending}
+                onClick={() => update.mutate({ id: report.id, title, content })}
               >
-                <Send className="size-4" />
-                提交审批
+                <Save className="size-4" />
+                保存
               </Button>
-            )}
-          </div>
-        </PermissionGate>
+              {report.status === "draft" && (
+                <Button
+                  disabled={transition.isPending}
+                  onClick={() => transition.mutate({ id: report.id, to: "in_review" })}
+                >
+                  <Send className="size-4" />
+                  提交审批
+                </Button>
+              )}
+            </div>
+          </PermissionGate>
+        )}
         <PermissionGate permission="report:export">
           {report.status === "approved" && (
-            <Button variant="outline" disabled={exportReport.isPending} onClick={() => exportReport.mutate(report.id)}>
+            <Button
+              variant="outline"
+              disabled={exportReport.isPending}
+              onClick={() => exportReport.mutate(report.id)}
+            >
               <Download className="size-4" />
               导出
             </Button>

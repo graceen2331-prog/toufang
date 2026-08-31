@@ -4,13 +4,7 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -46,8 +40,11 @@ export function ContractDetailPanel({ contractId }: { contractId: string }) {
     refetch: refetchPayments,
   } = usePayments(contractId);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const remainingAmountCents = contract
+    ? Math.max(0, contract.amount_cents - contract.payment_total_cents)
+    : 0;
   const canCreatePayment = contract
-    ? ["sent", "signed", "active"].includes(contract.status)
+    ? ["signed", "active"].includes(contract.status) && remainingAmountCents > 0
     : false;
 
   return (
@@ -99,14 +96,23 @@ export function ContractDetailPanel({ contractId }: { contractId: string }) {
                   <ContractStatusMenu contract={contract} />
                 </PermissionGate>
                 <PermissionGate permission="payment:write">
-                  <Button
-                    variant="outline"
-                    disabled={!canCreatePayment}
-                    onClick={() => setPaymentOpen(true)}
-                  >
-                    <Plus className="size-4" />
-                    登记付款
-                  </Button>
+                  <div className="space-y-1">
+                    <Button
+                      variant="outline"
+                      disabled={!canCreatePayment}
+                      onClick={() => setPaymentOpen(true)}
+                    >
+                      <Plus className="size-4" />
+                      登记付款
+                    </Button>
+                    {!canCreatePayment && (
+                      <p className="max-w-xs text-xs text-muted-foreground">
+                        {remainingAmountCents === 0
+                          ? "合同金额已全部登记。"
+                          : "合同签署或生效后才能登记付款。"}
+                      </p>
+                    )}
+                  </div>
                 </PermissionGate>
               </div>
             </CardContent>
@@ -124,7 +130,7 @@ export function ContractDetailPanel({ contractId }: { contractId: string }) {
                 onRetry={() => refetchPayments()}
                 isEmpty={(payments ?? []).length === 0}
                 emptyTitle="暂无付款记录"
-                emptyHint="合同发送或签署后可登记付款"
+                emptyHint="合同签署或生效后可登记付款"
               >
                 <PaymentsTable contractId={contract.id} payments={payments ?? []} />
               </AsyncBoundary>
@@ -133,6 +139,7 @@ export function ContractDetailPanel({ contractId }: { contractId: string }) {
 
           <CreatePaymentDialog
             contractId={contract.id}
+            remainingAmountCents={remainingAmountCents}
             open={paymentOpen}
             onOpenChange={setPaymentOpen}
           />
@@ -142,13 +149,7 @@ export function ContractDetailPanel({ contractId }: { contractId: string }) {
   );
 }
 
-function PaymentsTable({
-  contractId,
-  payments,
-}: {
-  contractId: string;
-  payments: PaymentDto[];
-}) {
+function PaymentsTable({ contractId, payments }: { contractId: string; payments: PaymentDto[] }) {
   return (
     <Table>
       <TableHeader>
@@ -167,7 +168,7 @@ function PaymentsTable({
               <StatusTag source={PAYMENT_STATUS} value={payment.status} />
             </TableCell>
             <TableCell>
-              {payment.method ? PAYMENT_METHOD_LABELS[payment.method] ?? payment.method : "—"}
+              {payment.method ? (PAYMENT_METHOD_LABELS[payment.method] ?? payment.method) : "—"}
             </TableCell>
             <TableCell className="text-right">
               <PermissionGate permission="payment:write">
@@ -190,15 +191,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AmountBlock({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
+function AmountBlock({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-md border bg-background p-3">
       <p className="text-xs text-muted-foreground">{label}</p>

@@ -48,6 +48,20 @@ test.describe("W7 内容审核与数据分析", () => {
     await expect(page.getByText("曝光").first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("趋势")).toBeVisible();
     await expect(page.getByText("AI Insights")).toBeVisible();
-    await expect(page.getByText(/成分实测内容观看稳定增长|评论区出现禁用词讨论/).first()).toBeVisible();
+    await expect(
+      page.getByText(/成分实测内容观看稳定增长|评论区出现禁用词讨论/).first(),
+    ).toBeVisible();
+  });
+
+  test("已导出报告保持只读，不能事后修改", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto("/reports?status=exported");
+
+    await expect(page.getByText("已导出").first()).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByText("这是已冻结的正式报告。如需调整，请重新生成报告并完成审批。"),
+    ).toBeVisible();
+    await expect(page.getByLabel("标题")).toBeDisabled();
+    await expect(page.getByRole("button", { name: "保存" })).toHaveCount(0);
   });
 });

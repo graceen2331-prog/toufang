@@ -8,7 +8,13 @@ import { REPORT_STATUS, assertTransition } from "@/shared/constants/status";
 import type { StartWorkflowResponseDto } from "@/shared/schemas/workflow";
 import type { AnalyticsOutput } from "@/server/ai/prompts/analytics";
 import type { ReportOutput } from "@/server/ai/prompts/report";
-import type { Insight, PerformanceMetric, Prisma, Report, WorkflowRun } from "@/generated/prisma/client";
+import type {
+  Insight,
+  PerformanceMetric,
+  Prisma,
+  Report,
+  WorkflowRun,
+} from "@/generated/prisma/client";
 import type {
   AnalyticsOverviewDto,
   InsightDto,
@@ -134,11 +140,21 @@ function workflowResponse(run: WorkflowRun): StartWorkflowResponseDto {
 }
 
 function buildSeries(rows: MetricWithLabel[]): AnalyticsOverviewDto["series"] {
-  type SeriesBucket = { views: number; engagements: number; conversions: number; revenue_cents: number };
+  type SeriesBucket = {
+    views: number;
+    engagements: number;
+    conversions: number;
+    revenue_cents: number;
+  };
   const byDate = new Map<string, SeriesBucket>();
   for (const row of rows) {
     const key = row.metricDate.toISOString().slice(0, 10);
-    const bucket = byDate.get(key) ?? { views: 0, engagements: 0, conversions: 0, revenue_cents: 0 };
+    const bucket = byDate.get(key) ?? {
+      views: 0,
+      engagements: 0,
+      conversions: 0,
+      revenue_cents: 0,
+    };
     const metrics = asMetricMap(row.metrics);
     bucket.views += metrics.views ?? 0;
     bucket.engagements += (metrics.likes ?? 0) + (metrics.comments ?? 0) + (metrics.shares ?? 0);
@@ -151,16 +167,25 @@ function buildSeries(rows: MetricWithLabel[]): AnalyticsOverviewDto["series"] {
     .map(([date, metrics]) => ({ date, ...metrics }));
 }
 
-function rankPerformers(rows: MetricWithLabel[]): {
+export function rankPerformers(
+  rows: Array<Pick<MetricWithLabel, "entityType" | "entityId" | "label" | "metrics">>,
+): {
   top: AnalyticsOverviewDto["top_performers"];
   low: AnalyticsOverviewDto["low_performers"];
 } {
-  const byEntity = new Map<string, { entityType: string; entityId: string; label: string; metrics: Record<string, number> }>();
+  const byEntity = new Map<
+    string,
+    { entityType: string; entityId: string; label: string; metrics: Record<string, number> }
+  >();
   for (const row of rows) {
     if (row.entityType === "campaign") continue;
     const key = `${row.entityType}:${row.entityId}`;
-    const bucket =
-      byEntity.get(key) ?? { entityType: row.entityType, entityId: row.entityId, label: row.label, metrics: {} };
+    const bucket = byEntity.get(key) ?? {
+      entityType: row.entityType,
+      entityId: row.entityId,
+      label: row.label,
+      metrics: {},
+    };
     const metrics = asMetricMap(row.metrics);
     for (const metricKey of METRIC_KEYS) {
       bucket.metrics[metricKey] = (bucket.metrics[metricKey] ?? 0) + (metrics[metricKey] ?? 0);
@@ -181,7 +206,11 @@ function rankPerformers(rows: MetricWithLabel[]): {
       metrics: item.metrics,
     }))
     .sort((a, b) => b.score - a.score);
-  return { top: ranked.slice(0, 5), low: ranked.slice(-5).reverse() };
+  const topCount = Math.min(5, Math.ceil(ranked.length / 2));
+  return {
+    top: ranked.slice(0, topCount),
+    low: ranked.slice(topCount).slice(-5).reverse(),
+  };
 }
 
 function dataQualityNotes(rows: MetricWithLabel[], totals: Record<string, number>): string[] {
@@ -263,7 +292,11 @@ export async function listInsights(
   return { items: items.map(insightToDto), pagination };
 }
 
-export async function updateInsightStatus(ctx: TenantCtx, id: string, status: string): Promise<InsightDto> {
+export async function updateInsightStatus(
+  ctx: TenantCtx,
+  id: string,
+  status: string,
+): Promise<InsightDto> {
   const insight = await analyticsRepository.updateInsightStatus(ctx, id, status);
   if (!insight) throw new ApiError("RESOURCE_NOT_FOUND", "洞察不存在");
   return insightToDto(insight);
@@ -289,6 +322,16 @@ export async function updateReport(
   id: string,
   input: { title?: string; content?: Record<string, unknown> },
 ): Promise<ReportDto> {
+  const current = await analyticsRepository.findReport(ctx, id);
+  if (!current) throw new ApiError("RESOURCE_NOT_FOUND", "报告不存在");
+  if (current.status !== "draft") {
+    throw new ApiError(
+      "CONFLICT",
+      current.status === "in_review"
+        ? "报告已提交审批，审批退回草稿后才能继续编辑"
+        : "正式报告已冻结，不可直接修改；请重新生成报告并完成审批",
+    );
+  }
   const report = await analyticsRepository.updateReport(ctx, id, {
     ...(input.title ? { title: input.title } : {}),
     ...(input.content ? { content: input.content as Prisma.InputJsonValue } : {}),
@@ -306,6 +349,9 @@ export async function transitionReportStatus(
   const report = await analyticsRepository.findReport(ctx, id);
   if (!report) throw new ApiError("RESOURCE_NOT_FOUND", "报告不存在");
   assertTransition(REPORT_STATUS, report.status, to);
+  if (report.status === "approved" && to === "draft") {
+    throw new ApiError("CONFLICT", "已批准报告不可回退为草稿；请重新生成报告并完成审批");
+  }
   if (report.status === "in_review" && to === "approved") {
     throw new ApiError("CONFLICT", "请在审批中心批准报告，不能绕过审批门");
   }
@@ -320,7 +366,9 @@ export async function transitionReportStatus(
       type: "report",
       status: "pending",
       title: `报告审批：${report.title}`,
-      summary: String((report.content as { executive_summary?: string })?.executive_summary ?? "").slice(0, 200),
+      summary: String(
+        (report.content as { executive_summary?: string })?.executive_summary ?? "",
+      ).slice(0, 200),
       entityType: "report",
       entityId: id,
       payload: { report_id: id, title: report.title, content: report.content as object },
@@ -339,12 +387,25 @@ export async function onReportApprovalDecided(
   const report = await analyticsRepository.findReport(ctx, reportId);
   if (!report || report.status !== "in_review") return;
   if (decision === "approved") {
-    await analyticsRepository.transitionReport(ctx, reportId, "in_review", "approved", "报告审批通过", {
-      approvedAt: new Date(),
-      approvedBy: ctx.userId ?? null,
-    });
+    await analyticsRepository.transitionReport(
+      ctx,
+      reportId,
+      "in_review",
+      "approved",
+      "报告审批通过",
+      {
+        approvedAt: new Date(),
+        approvedBy: ctx.userId ?? null,
+      },
+    );
   } else {
-    await analyticsRepository.transitionReport(ctx, reportId, "in_review", "draft", "报告审批退回修改");
+    await analyticsRepository.transitionReport(
+      ctx,
+      reportId,
+      "in_review",
+      "draft",
+      "报告审批退回修改",
+    );
   }
 }
 

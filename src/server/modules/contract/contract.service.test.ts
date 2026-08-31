@@ -4,6 +4,7 @@ const findContract = vi.fn();
 const transitionContract = vi.fn();
 const findPayment = vi.fn();
 const transitionPayment = vi.fn();
+const createPayment = vi.fn();
 
 vi.mock("./contract.repository", () => ({
   contractRepository: {
@@ -11,6 +12,7 @@ vi.mock("./contract.repository", () => ({
     transitionContract,
     findPayment,
     transitionPayment,
+    createPayment,
   },
 }));
 
@@ -131,5 +133,49 @@ describe("合同与付款审批门", () => {
       code: "CONFLICT",
     });
     expect(transitionPayment).not.toHaveBeenCalled();
+  });
+
+  it("已发送但未签署的合同不可登记付款", async () => {
+    findContract.mockResolvedValue({ ...contract, status: "sent" });
+    const { createPayment: create } = await import("./contract.service");
+
+    await expect(
+      create({ orgId: "org-1", userId: "user-1" }, "contract-1", { amount_cents: 100_000 }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(createPayment).not.toHaveBeenCalled();
+  });
+
+  it("付款金额不可超过合同剩余可付金额", async () => {
+    findContract.mockResolvedValue({
+      ...contract,
+      status: "signed",
+      payments: [
+        { ...payment, status: "approved", amountCents: 4_500_000 },
+        { ...payment, id: "cancelled-payment", status: "cancelled", amountCents: 2_000_000 },
+      ],
+    });
+    const { createPayment: create } = await import("./contract.service");
+
+    await expect(
+      create({ orgId: "org-1", userId: "user-1" }, "contract-1", { amount_cents: 600_000 }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(createPayment).not.toHaveBeenCalled();
+  });
+
+  it("已签署合同可在剩余额度内登记付款", async () => {
+    findContract.mockResolvedValue({ ...contract, status: "signed", payments: [] });
+    createPayment.mockResolvedValue({ ...payment, status: "not_started", amountCents: 500_000 });
+    const { createPayment: create } = await import("./contract.service");
+
+    await expect(
+      create({ orgId: "org-1", userId: "user-1" }, "contract-1", {
+        amount_cents: 500_000,
+        method: "bank",
+      }),
+    ).resolves.toMatchObject({ amount_cents: 500_000, status: "not_started" });
+    expect(createPayment).toHaveBeenCalledWith(
+      { orgId: "org-1", userId: "user-1" },
+      expect.objectContaining({ contractId: "contract-1", amountCents: 500_000 }),
+    );
   });
 });

@@ -8,27 +8,22 @@ import { Input } from "@/components/ui/input";
 import { useLogin } from "@/features/auth/queries";
 import { ApiClientError } from "@/lib/api";
 import { LoginSchema, type LoginInput } from "@/shared/schemas/auth";
+import type { DemoLoginConfig } from "@/features/auth/demo-login";
 
-const DEMO_PASSWORD = "demo1234";
-
-const demoAccounts = [
-  { label: "管理员", email: "admin@demo.com", role: "全权限 / 双组织" },
-  { label: "市场经理", email: "manager@demo.com", role: "Campaign 与审批" },
-  { label: "达人运营", email: "kol@demo.com", role: "达人管道" },
-  { label: "只读成员", email: "viewer@demo.com", role: "权限拒绝态" },
-  { label: "北辰管理员", email: "admin2@demo.com", role: "第二组织" },
-];
-
-export function LoginForm() {
+export function LoginForm({ demoConfig }: { demoConfig: DemoLoginConfig | null }) {
   const login = useLogin();
   const form = useForm<LoginInput>({
     resolver: zodResolver(LoginSchema),
-    defaultValues: { email: "admin@demo.com", password: DEMO_PASSWORD },
+    defaultValues: {
+      email: demoConfig?.accounts[0]?.email ?? "",
+      password: demoConfig?.password ?? "",
+    },
   });
 
   function fillDemoAccount(email: string) {
+    if (!demoConfig) return;
     form.setValue("email", email, { shouldDirty: true, shouldValidate: true });
-    form.setValue("password", DEMO_PASSWORD, { shouldDirty: true, shouldValidate: true });
+    form.setValue("password", demoConfig.password, { shouldDirty: true, shouldValidate: true });
     form.clearErrors();
   }
 
@@ -49,7 +44,9 @@ export function LoginForm() {
           登录 KOL Marketing OS
         </h2>
         <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">
-          使用演示账号进入星澜传媒工作区，查看 W9 验收剧本中的 Dashboard、审批门、知识库与 AI 监控。
+          {demoConfig
+            ? "使用演示账号进入工作区，体验 Campaign、审批、知识库与 AI 运行监控。"
+            : "使用组织分配的账号登录工作区。若无法登录，请联系组织管理员。"}
         </p>
       </div>
 
@@ -96,33 +93,35 @@ export function LoginForm() {
           </FieldGroup>
         </form>
 
-        <div className="mt-7 border-t border-border pt-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-xs font-medium text-foreground">演示账号</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                点击账号可自动填充，密码均为 {DEMO_PASSWORD}
-              </p>
+        {demoConfig && (
+          <div className="mt-7 border-t border-border pt-5">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-foreground">演示账号</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  点击账号可自动填充，密码均为 {demoConfig.password}
+                </p>
+              </div>
+              <span className="text-xs text-muted-foreground">可一键试用</span>
             </div>
-            <span className="text-xs text-muted-foreground">可一键试用</span>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {demoConfig.accounts.map((account) => (
+                <button
+                  key={account.email}
+                  type="button"
+                  className="group grid gap-1 border border-border bg-background px-3 py-2 text-left transition hover:border-primary/40 hover:bg-accent/45 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 focus-visible:outline-none active:translate-y-px"
+                  onClick={() => fillDemoAccount(account.email)}
+                >
+                  <span className="text-sm font-medium text-foreground">{account.label}</span>
+                  <span className="truncate font-mono text-xs text-muted-foreground group-hover:text-primary">
+                    {account.email}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{account.role}</span>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {demoAccounts.map((account) => (
-              <button
-                key={account.email}
-                type="button"
-                className="group grid gap-1 border border-border bg-background px-3 py-2 text-left transition hover:border-primary/40 hover:bg-accent/45 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 focus-visible:outline-none active:translate-y-px"
-                onClick={() => fillDemoAccount(account.email)}
-              >
-                <span className="text-sm font-medium text-foreground">{account.label}</span>
-                <span className="truncate font-mono text-xs text-muted-foreground group-hover:text-primary">
-                  {account.email}
-                </span>
-                <span className="text-xs text-muted-foreground">{account.role}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

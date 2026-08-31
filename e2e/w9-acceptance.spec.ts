@@ -66,7 +66,12 @@ async function transitionBrief(page: Page, targetLabel: string) {
   await expect(page.getByText(targetLabel).first()).toBeVisible({ timeout: 10_000 });
 }
 
-async function advanceFirstCreator(page: Page, campaignUrl: string, currentLabel: string, targetLabel: string) {
+async function advanceFirstCreator(
+  page: Page,
+  campaignUrl: string,
+  currentLabel: string,
+  targetLabel: string,
+) {
   await page.goto(campaignUrl);
   await page.getByRole("tab", { name: "达人 Pipeline" }).click();
   const row = page.getByRole("row").filter({ hasText: currentLabel }).first();
@@ -102,7 +107,11 @@ async function completeOutreachAndNegotiation(page: Page, campaignName: string) 
   await page.getByRole("dialog").getByRole("button", { name: "生成草稿" }).click();
   await expect(page.getByText("AI 外联草稿已生成")).toBeVisible({ timeout: 30_000 });
 
-  const draftCard = page.locator("[data-slot=card]").filter({ hasText: "草稿" }).filter({ hasText: "AI 生成" }).first();
+  const draftCard = page
+    .locator("[data-slot=card]")
+    .filter({ hasText: "草稿" })
+    .filter({ hasText: "AI 生成" })
+    .first();
   await expect(draftCard).toBeVisible({ timeout: 15_000 });
   await draftCard.getByRole("button").last().click();
   await page.getByRole("menuitem", { name: "待审批" }).click();
@@ -111,7 +120,11 @@ async function completeOutreachAndNegotiation(page: Page, campaignName: string) 
 
   await approveFirst(page, /外联消息发送审批/);
   await page.goto(threadUrl);
-  const approvedCard = page.locator("[data-slot=card]").filter({ hasText: "已批准" }).filter({ hasText: "AI 生成" }).first();
+  const approvedCard = page
+    .locator("[data-slot=card]")
+    .filter({ hasText: "已批准" })
+    .filter({ hasText: "AI 生成" })
+    .first();
   await expect(approvedCard).toBeVisible({ timeout: 15_000 });
   await approvedCard.getByRole("button").last().click();
   await page.getByRole("menuitem", { name: "已发送" }).click();
@@ -170,6 +183,12 @@ async function createContractAndPayment(page: Page, campaignName: string) {
   await row.click();
   await expect(page.getByText("已发送").first()).toBeVisible({ timeout: 15_000 });
 
+  await page.getByRole("button", { name: "推进合同状态" }).click();
+  await page.getByRole("menuitem", { name: "已签署" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "确认推进" }).click();
+  await expect(page.getByText("合同状态已更新")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("已签署").first()).toBeVisible({ timeout: 15_000 });
+
   await page.getByRole("button", { name: "登记付款" }).click();
   dialog = page.getByRole("dialog");
   await dialog.locator("input").fill("30000");
@@ -186,7 +205,11 @@ async function createContractAndPayment(page: Page, campaignName: string) {
   await approveFirst(page, /付款审批/);
 }
 
-async function submitReviewPublishAndMetric(page: Page, campaignName: string, contentTitle: string) {
+async function submitReviewPublishAndMetric(
+  page: Page,
+  campaignName: string,
+  contentTitle: string,
+) {
   await page.goto("/content-review");
   await page.getByRole("button", { name: "提交内容" }).click();
   const dialog = page.getByRole("dialog");
@@ -196,16 +219,18 @@ async function submitReviewPublishAndMetric(page: Page, campaignName: string, co
   await page.getByRole("option").first().click();
   await dialog.getByRole("textbox").nth(0).fill(contentTitle);
   await dialog.getByRole("textbox").nth(1).fill("小红书");
-  await dialog.getByPlaceholder("粘贴达人初稿文案，AI 审核会结合 Brief 与品牌禁用词检查。").fill(
-    "这支焕亮维C精华有医疗级焕亮体验，7 天治愈暗沉。点击购物车领取双十一专属优惠。",
-  );
+  await dialog
+    .getByPlaceholder("粘贴达人初稿文案，AI 审核会结合 Brief 与品牌禁用词检查。")
+    .fill("这支焕亮维C精华有医疗级焕亮体验，7 天治愈暗沉。点击购物车领取双十一专属优惠。");
   await dialog.getByRole("button", { name: "提交内容" }).click();
   await expect(page.getByText("内容已提交")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(contentTitle).first()).toBeVisible({ timeout: 15_000 });
 
   await page.getByRole("button", { name: "发起 AI 审核" }).click();
   await expect(page.getByText("AI 内容审核已启动")).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText(/医疗功效暗示|禁用词|高风险/).first()).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText(/医疗功效暗示|禁用词|高风险/).first()).toBeVisible({
+    timeout: 45_000,
+  });
   await page.getByRole("button", { name: "批准" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
   await expect(page.getByText("已过审").first()).toBeVisible({ timeout: 45_000 });
@@ -228,7 +253,10 @@ async function generateApproveAndExportReport(page: Page, campaignName: string) 
 
   await page.goto("/reports");
   await expect(page.getByRole("heading", { name: "报告" })).toBeVisible();
-  const reportRow = page.getByRole("row").filter({ hasText: "焕亮维C精华 双十一种草阶段复盘" }).first();
+  const reportRow = page
+    .getByRole("row")
+    .filter({ hasText: "焕亮维C精华 双十一种草阶段复盘" })
+    .first();
   await expect(reportRow).toBeVisible({ timeout: 30_000 });
   await reportRow.click();
   await expect(page.getByText("高管摘要")).toBeVisible();
@@ -249,6 +277,16 @@ async function assertViewerDenied(browser: Browser) {
 }
 
 test.describe("W9 最终验收", () => {
+  test("未知路径展示品牌化返回入口", async ({ page }) => {
+    await login(page);
+    await page.goto("/does-not-exist-product-readiness");
+    await expect(page.getByRole("heading", { name: "这个页面不在当前工作区" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "返回工作台" })).toHaveAttribute(
+      "href",
+      "/dashboard",
+    );
+  });
+
   test("Campaign 详情页内可直接处理当前 Campaign 审批", async ({ page }) => {
     test.slow();
     const suffix = Date.now().toString(36);
@@ -263,7 +301,10 @@ test.describe("W9 最终验收", () => {
     await approveInlineFromCampaign(page, new RegExp(`策略草案审批：${campaignName}`));
   });
 
-  test("端到端演示剧本：Campaign → AI → 外联合同 → 内容指标 → 报告与横切验证", async ({ page, browser }) => {
+  test("端到端演示剧本：Campaign → AI → 外联合同 → 内容指标 → 报告与横切验证", async ({
+    page,
+    browser,
+  }) => {
     test.setTimeout(300_000);
     const suffix = Date.now().toString(36);
     const campaignName = `W9 验收战役 ${suffix}`;
@@ -324,9 +365,9 @@ test.describe("W9 最终验收", () => {
     await expect(page.getByText("metric.upsert").first()).toBeVisible({ timeout: 20_000 });
 
     await page.goto("/knowledge");
-    await page.getByPlaceholder("例如：双十一美妆 Campaign 哪类内容更适合承接转化？").fill(
-      "双十一美妆 Campaign 哪类内容更适合承接转化？",
-    );
+    await page
+      .getByPlaceholder("例如：双十一美妆 Campaign 哪类内容更适合承接转化？")
+      .fill("双十一美妆 Campaign 哪类内容更适合承接转化？");
     await page.getByRole("button", { name: "提问" }).click();
     await expect(page.getByText("引用来源")).toBeVisible({ timeout: 30_000 });
 

@@ -7,7 +7,12 @@ import type { TenantCtx } from "@/server/modules/brand/brand.repository";
 import { CONTRACT_STATUS, PAYMENT_STATUS, assertTransition } from "@/shared/constants/status";
 import type { ContractDto, PaymentDto } from "@/shared/schemas/outreach";
 import type { PaymentRecord } from "@/generated/prisma/client";
-import { contractRepository, type ContractListParams, type ContractWithRelations, type PaymentWithContract } from "./contract.repository";
+import {
+  contractRepository,
+  type ContractListParams,
+  type ContractWithRelations,
+  type PaymentWithContract,
+} from "./contract.repository";
 
 function jsonText(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
@@ -17,7 +22,9 @@ function jsonText(value: unknown): string | null {
 }
 
 function contractToDto(contract: ContractWithRelations): ContractDto {
-  const paymentTotal = contract.payments.reduce((sum, payment) => sum + payment.amountCents, 0);
+  const paymentTotal = contract.payments
+    .filter((payment) => !["cancelled", "failed"].includes(payment.status))
+    .reduce((sum, payment) => sum + payment.amountCents, 0);
   const paymentPaid = contract.payments
     .filter((payment) => payment.status === "paid")
     .reduce((sum, payment) => sum + payment.amountCents, 0);
@@ -41,7 +48,10 @@ function contractToDto(contract: ContractWithRelations): ContractDto {
   };
 }
 
-function paymentToDto(payment: PaymentRecord | PaymentWithContract, contract?: ContractWithRelations): PaymentDto {
+function paymentToDto(
+  payment: PaymentRecord | PaymentWithContract,
+  contract?: ContractWithRelations,
+): PaymentDto {
   const relatedContract = "contract" in payment ? payment.contract : contract;
   return {
     id: payment.id,
@@ -100,7 +110,10 @@ export async function createContract(
     throw new ApiError("CONFLICT", "需先确认合作条款后才能创建合同");
   }
 
-  const existing = await contractRepository.findContractByCampaignCreator(ctx, input.campaign_creator_id);
+  const existing = await contractRepository.findContractByCampaignCreator(
+    ctx,
+    input.campaign_creator_id,
+  );
   if (existing) return contractToDto(existing);
 
   const contract = await contractRepository.createContract(ctx, {
@@ -153,7 +166,14 @@ export async function transitionContractStatus(
   const extra: Record<string, unknown> = {};
   if (to === "signed") extra.signedAt = new Date();
 
-  await contractRepository.transitionContract(ctx, contractId, contract.status, to, reason ?? null, extra);
+  await contractRepository.transitionContract(
+    ctx,
+    contractId,
+    contract.status,
+    to,
+    reason ?? null,
+    extra,
+  );
 
   if (to === "in_review") {
     await checkpointRepository.create(ctx, {
@@ -201,7 +221,13 @@ export async function onContractApprovalDecided(
   const contract = await contractRepository.findContract(ctx, contractId);
   if (!contract || contract.status !== "in_review") return;
   if (decision === "approved") {
-    await contractRepository.transitionContract(ctx, contractId, "in_review", "sent", "合同审批通过");
+    await contractRepository.transitionContract(
+      ctx,
+      contractId,
+      "in_review",
+      "sent",
+      "合同审批通过",
+    );
     await campaignRepository.transitionCreatorField(
       ctx,
       contract.campaignCreatorId,
@@ -212,7 +238,13 @@ export async function onContractApprovalDecided(
       "user",
     );
   } else {
-    await contractRepository.transitionContract(ctx, contractId, "in_review", "draft", "合同审批驳回");
+    await contractRepository.transitionContract(
+      ctx,
+      contractId,
+      "in_review",
+      "draft",
+      "合同审批驳回",
+    );
     await campaignRepository.transitionCreatorField(
       ctx,
       contract.campaignCreatorId,
@@ -235,12 +267,26 @@ export async function listPayments(ctx: TenantCtx, contractId: string): Promise<
 export async function createPayment(
   ctx: TenantCtx,
   contractId: string,
-  input: { amount_cents: number; method?: "bank" | "alipay" | "other" | null; notes?: string | null },
+  input: {
+    amount_cents: number;
+    method?: "bank" | "alipay" | "other" | null;
+    notes?: string | null;
+  },
 ): Promise<PaymentDto> {
   const contract = await contractRepository.findContract(ctx, contractId);
   if (!contract) throw new ApiError("RESOURCE_NOT_FOUND", "合同不存在");
-  if (!["sent", "signed", "active"].includes(contract.status)) {
-    throw new ApiError("CONFLICT", "合同发送或签署后才能登记付款");
+  if (!["signed", "active"].includes(contract.status)) {
+    throw new ApiError("CONFLICT", "仅已签署或生效合同可登记付款；预付款需走单独的例外审批流程");
+  }
+  const committedTotal = contract.payments
+    .filter((payment) => !["cancelled", "failed"].includes(payment.status))
+    .reduce((sum, payment) => sum + payment.amountCents, 0);
+  const remainingCents = Math.max(0, contract.amountCents - committedTotal);
+  if (input.amount_cents > remainingCents) {
+    throw new ApiError(
+      "CONFLICT",
+      `付款金额超过合同剩余可付金额 ¥${(remainingCents / 100).toLocaleString("zh-CN")}`,
+    );
   }
   const payment = await contractRepository.createPayment(ctx, {
     contractId,
@@ -272,7 +318,14 @@ export async function transitionPaymentStatus(
   }
   if (to === "paid") extra.paidAt = new Date();
 
-  await contractRepository.transitionPayment(ctx, paymentId, payment.status, to, reason ?? null, extra);
+  await contractRepository.transitionPayment(
+    ctx,
+    paymentId,
+    payment.status,
+    to,
+    reason ?? null,
+    extra,
+  );
 
   if (to === "pending_approval") {
     await checkpointRepository.create(ctx, {
@@ -317,11 +370,24 @@ export async function onPaymentApprovalDecided(
   const payment = await contractRepository.findPayment(ctx, paymentId);
   if (!payment || payment.status !== "pending_approval") return;
   if (decision === "approved") {
-    await contractRepository.transitionPayment(ctx, paymentId, "pending_approval", "approved", "付款审批通过", {
-      approvedAt: new Date(),
-      approvedBy: ctx.userId ?? null,
-    });
+    await contractRepository.transitionPayment(
+      ctx,
+      paymentId,
+      "pending_approval",
+      "approved",
+      "付款审批通过",
+      {
+        approvedAt: new Date(),
+        approvedBy: ctx.userId ?? null,
+      },
+    );
   } else {
-    await contractRepository.transitionPayment(ctx, paymentId, "pending_approval", "cancelled", "付款审批驳回");
+    await contractRepository.transitionPayment(
+      ctx,
+      paymentId,
+      "pending_approval",
+      "cancelled",
+      "付款审批驳回",
+    );
   }
 }

@@ -92,4 +92,16 @@ test.describe("外联 / 谈判 / 合同", () => {
     await expect(page.getByText("合同金额").first()).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("付款记录").first()).toBeVisible();
   });
+
+  test("未签署合同不能登记付款", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto("/contracts?status=sent");
+
+    const sentRow = page.getByRole("row").filter({ hasText: "已发送" }).first();
+    await expect(sentRow).toBeVisible({ timeout: 10_000 });
+    await sentRow.click();
+
+    await expect(page.getByRole("button", { name: "登记付款" })).toBeDisabled();
+    await expect(page.getByText("合同签署或生效后才能登记付款。")).toBeVisible();
+  });
 });
