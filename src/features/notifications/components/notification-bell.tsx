@@ -11,13 +11,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useMarkNotificationsRead, useNotifications, useUnreadNotifications } from "@/features/notifications/queries";
+import {
+  useMarkNotificationsRead,
+  useNotifications,
+  useUnreadNotifications,
+} from "@/features/notifications/queries";
+import {
+  getNotificationDisplayBody,
+  groupNotifications,
+} from "@/features/notifications/group-notifications";
 
 export function NotificationBell() {
   const unread = useUnreadNotifications();
   const notifications = useNotifications({ unread: true });
   const markRead = useMarkNotificationsRead();
   const count = unread.data?.unread ?? 0;
+  const groups = groupNotifications(notifications.data?.items ?? []);
 
   return (
     <DropdownMenu>
@@ -44,18 +53,25 @@ export function NotificationBell() {
           )}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {(notifications.data?.items ?? []).length === 0 ? (
+        {groups.length === 0 ? (
           <div className="px-2 py-6 text-center text-sm text-muted-foreground">暂无未读通知</div>
         ) : (
-          (notifications.data?.items ?? []).slice(0, 5).map((item) => (
-            <DropdownMenuItem key={item.id} asChild>
+          groups.slice(0, 5).map((group) => (
+            <DropdownMenuItem key={group.key} asChild>
               <Link
-                href={item.link_url ?? "/notifications"}
+                href={group.notification.link_url ?? "/notifications"}
                 className="flex flex-col items-start gap-1 whitespace-normal"
-                onClick={() => markRead.mutate({ ids: [item.id] })}
+                onClick={() => markRead.mutate({ ids: group.ids })}
               >
-                <span className="font-medium">{item.title}</span>
-                {item.body && <span className="line-clamp-2 text-xs text-muted-foreground">{item.body}</span>}
+                <span className="font-medium">
+                  {group.notification.title}
+                  {group.count > 1 ? `（${group.count} 条）` : ""}
+                </span>
+                {getNotificationDisplayBody(group.notification.body) && (
+                  <span className="line-clamp-2 text-xs text-muted-foreground">
+                    {getNotificationDisplayBody(group.notification.body)}
+                  </span>
+                )}
               </Link>
             </DropdownMenuItem>
           ))

@@ -31,6 +31,21 @@ const PRIORITY_LABELS: Record<string, string> = {
   urgent: "紧急",
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isHighRiskContent(checkpoint: CheckpointDto): boolean {
+  if (checkpoint.type !== "content") return false;
+  const review = isRecord(checkpoint.payload.review) ? checkpoint.payload.review : null;
+  if (!review) return false;
+  if (review.risk_level === "high") return true;
+  return (
+    Array.isArray(review.findings) &&
+    review.findings.some((finding) => isRecord(finding) && finding.severity === "high")
+  );
+}
+
 export function ApprovalCard({
   checkpoint,
   density = "default",
@@ -44,12 +59,15 @@ export function ApprovalCard({
   const [rejectReason, setRejectReason] = useState("");
   const isPending = checkpoint.status === "pending";
   const isCompact = density === "compact";
+  const highRiskContent = isHighRiskContent(checkpoint);
 
   const content = (
     <div className={cn(isCompact ? "space-y-3" : "flex items-start justify-between gap-4")}>
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{CHECKPOINT_TYPE_LABELS[checkpoint.type] ?? checkpoint.type}</Badge>
+          <Badge variant="outline">
+            {CHECKPOINT_TYPE_LABELS[checkpoint.type] ?? checkpoint.type}
+          </Badge>
           <span className="font-medium">{checkpoint.title}</span>
           <StatusTag source={CHECKPOINT_STATUS} value={checkpoint.status} />
           {checkpoint.priority !== "normal" && (
@@ -57,6 +75,7 @@ export function ApprovalCard({
               {PRIORITY_LABELS[checkpoint.priority] ?? checkpoint.priority}
             </Badge>
           )}
+          {highRiskContent && <Badge variant="destructive">高风险内容</Badge>}
         </div>
         {checkpoint.summary && (
           <p className="text-sm text-muted-foreground">{checkpoint.summary}</p>
@@ -114,8 +133,12 @@ export function ApprovalCard({
       <ConfirmDialog
         open={approveOpen}
         onOpenChange={setApproveOpen}
-        title="确认批准？"
-        description={`批准后「${checkpoint.title}」对应的动作将继续执行。`}
+        title={highRiskContent ? "确认批准高风险内容？" : "确认批准？"}
+        description={
+          highRiskContent
+            ? "AI 审核发现高风险问题。请确认已完成人工复核，并承担继续执行该内容的责任。"
+            : `批准后「${checkpoint.title}」对应的动作将继续执行。`
+        }
         confirmLabel="批准"
         destructive={false}
         pending={decide.isPending}
