@@ -5,7 +5,7 @@ import type { TenantCtx } from "@/server/modules/brand/brand.repository";
 import { getUserNames } from "@/server/modules/user/user.repository";
 import { checkpointRepository, type CheckpointListParams } from "./checkpoint.repository";
 import type { HumanCheckpoint } from "@/generated/prisma/client";
-import type { CheckpointDto } from "@/shared/schemas/checkpoint";
+import type { CheckpointDecisionInput, CheckpointDto } from "@/shared/schemas/checkpoint";
 
 async function toDto(cp: HumanCheckpoint, names: Map<string, string>): Promise<CheckpointDto> {
   return {
@@ -23,6 +23,10 @@ async function toDto(cp: HumanCheckpoint, names: Map<string, string>): Promise<C
     decided_by_name: cp.decidedBy ? (names.get(cp.decidedBy) ?? null) : null,
     decided_at: cp.decidedAt?.toISOString() ?? null,
     decision_reason: cp.decisionReason,
+    decision_metadata:
+      cp.decisionMetadata && typeof cp.decisionMetadata === "object"
+        ? (cp.decisionMetadata as Record<string, unknown>)
+        : {},
     created_at: cp.createdAt.toISOString(),
   };
 }
@@ -50,6 +54,7 @@ export async function decideCheckpoint(
   id: string,
   decision: "approved" | "rejected" | "changes_requested",
   reason?: string | null,
+  override?: CheckpointDecisionInput["override"],
 ): Promise<CheckpointDto> {
   const checkpoint = await checkpointRepository.findById(ctx, id);
   if (!checkpoint) throw new ApiError("RESOURCE_NOT_FOUND", "审批项不存在");
@@ -75,8 +80,17 @@ export async function decideCheckpoint(
     return toDto(updated!, names);
   }
 
-  const decided = await checkpointRepository.decide(ctx, id, decision, reason?.trim() || null);
-  if (!decided) throw new ApiError("APPROVAL_ALREADY_DECIDED");
+  if (checkpoint.type === "content" && checkpoint.entityType === "content_asset") {
+    const { decideContentCheckpoint } = await import("@/server/modules/content/content.service");
+    await decideContentCheckpoint(ctx, checkpoint.id, {
+      decision,
+      reason: reason?.trim() || null,
+      ...(override ? { override } : {}),
+    });
+  } else {
+    const decided = await checkpointRepository.decide(ctx, id, decision, reason?.trim() || null);
+    if (!decided) throw new ApiError("APPROVAL_ALREADY_DECIDED");
+  }
 
   // 工作流挂钩：W4 实现（动态 import 避免循环依赖；未实现时静默跳过）
   if (checkpoint.workflowRunId) {
@@ -116,11 +130,6 @@ export async function decideCheckpoint(
       "@/server/modules/contract/contract.service"
     );
     await onPaymentApprovalDecided(ctx, checkpoint.entityId, decision);
-  }
-
-  if (checkpoint.type === "content" && checkpoint.entityType === "content_asset" && checkpoint.entityId) {
-    const { onContentReviewDecided } = await import("@/server/modules/content/content.service");
-    await onContentReviewDecided(ctx, checkpoint.entityId, decision);
   }
 
   const updated = await checkpointRepository.findById(ctx, id);

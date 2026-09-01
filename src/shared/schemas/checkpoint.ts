@@ -3,7 +3,15 @@ import { z } from "zod";
 export const CheckpointDecisionSchema = z.object({
   decision: z.enum(["approved", "rejected", "changes_requested"]),
   reason: z.string().max(1000).nullish(),
+  override: z
+    .object({
+      enabled: z.literal(true),
+      category: z.enum(["false_positive", "evidence_verified", "brand_authorized", "other"]),
+      acknowledged_finding_ids: z.array(z.string().min(1)).min(1),
+    })
+    .optional(),
 });
+export type CheckpointDecisionInput = z.infer<typeof CheckpointDecisionSchema>;
 
 export interface CheckpointDto {
   id: string;
@@ -20,6 +28,7 @@ export interface CheckpointDto {
   decided_by_name: string | null;
   decided_at: string | null;
   decision_reason: string | null;
+  decision_metadata: Record<string, unknown>;
   created_at: string;
 }
 

@@ -24,6 +24,9 @@ export const ERROR_CODES = {
   CREATOR_BLACKLISTED: { status: 409, message: "该达人在黑名单中" },
   APPROVAL_REQUIRED: { status: 409, message: "该操作需要审批" },
   APPROVAL_ALREADY_DECIDED: { status: 409, message: "该审批已被处理" },
+  CONTENT_BLOCKING_FINDINGS: { status: 409, message: "内容命中必须修改的确定性规则" },
+  CONTENT_OVERRIDE_REQUIRED: { status: 422, message: "批准高风险内容必须填写覆盖说明" },
+  CONTENT_APPROVAL_EVIDENCE_INVALID: { status: 409, message: "内容审批证据无效" },
 
   // AI
   AI_BUDGET_EXCEEDED: { status: 429, message: "本月 AI 预算已用尽" },

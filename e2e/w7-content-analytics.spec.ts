@@ -11,17 +11,8 @@ async function loginAsAdmin(page: Page) {
   await expect(page).toHaveURL(/\/dashboard/);
 }
 
-async function approveFirst(page: Page, titlePattern: RegExp) {
-  await page.goto("/approvals");
-  const card = page.locator("div").filter({ hasText: titlePattern }).first();
-  await expect(card).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: "批准" }).first().click();
-  await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
-  await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 10_000 });
-}
-
 test.describe("W7 内容审核与数据分析", () => {
-  test("内容审核工作台：触发 AI 审核 → 审批通过 → 内容过审", async ({ page }) => {
+  test("内容审核工作台：确定性规则阻断 → AI 风险覆盖 → 内容过审", async ({ page }) => {
     test.slow();
     await loginAsAdmin(page);
 
@@ -41,13 +32,24 @@ test.describe("W7 内容审核与数据分析", () => {
     if (await startButton.isVisible({ timeout: 3000 }).catch(() => false)) {
       await startButton.click();
     }
-    await expect(page.getByText(/医疗功效暗示|禁用词/)).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("button", { name: "批准" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/命中品牌禁用词|禁用词/).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("确定性规则").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "必须修改" })).toBeDisabled();
+    await page.getByRole("button", { name: "要求修改" }).click();
+    await expect(page.getByText("需修改").first()).toBeVisible({ timeout: 30_000 });
 
-    await approveFirst(page, /内容审核复核/);
+    await page.getByText("成分党维C精华温和提亮测评").click();
+    const cleanStartButton = page.getByRole("button", { name: /发起 AI 审核/ });
+    await expect(cleanStartButton).toBeVisible({ timeout: 15_000 });
+    await cleanStartButton.click();
+    await expect(page.getByText("AI 建议").first()).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "批准" }).click();
+    const overrideDialog = page.getByRole("dialog");
+    await overrideDialog
+      .getByPlaceholder("覆盖说明（至少 10 个字）")
+      .fill("已逐项核验原始内容和品牌依据，可以批准发布");
+    await overrideDialog.getByRole("button", { name: "确认并批准" }).click();
 
-    await page.goto("/content-review");
-    await page.getByText("林小鹿 28 天焕亮实测初稿").click();
     await expect(page.getByText("已过审").first()).toBeVisible({ timeout: 30_000 });
   });
 

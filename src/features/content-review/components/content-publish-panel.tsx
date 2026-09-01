@@ -27,7 +27,8 @@ export function ContentPublishPanel({ asset }: { asset: ContentAssetDto | null }
     return null;
   }
 
-  const canPublish = asset.status === "approved";
+  const canPublish = asset.status === "approved" && asset.approval_evidence_present;
+  const requiresReapproval = asset.status === "approved" && !asset.approval_evidence_present;
   const canRecordMetrics = asset.status === "published";
 
   return (
@@ -37,8 +38,13 @@ export function ContentPublishPanel({ asset }: { asset: ContentAssetDto | null }
         <CardDescription>内容过审后标记发布，并录入平台回传的首批指标。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!canPublish && !canRecordMetrics && (
+        {!canPublish && !canRecordMetrics && !requiresReapproval && (
           <p className="text-sm text-muted-foreground">内容过审后可在这里完成发布与指标录入。</p>
+        )}
+        {requiresReapproval && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            该历史内容缺少与当前正文绑定的审批证据，请重新发起内容审核后再发布。
+          </p>
         )}
 
         {canPublish && (

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch, apiFetchList } from "@/lib/api";
 import type { CheckpointDto } from "@/shared/schemas/checkpoint";
+import type { CheckpointDecisionInput } from "@/shared/schemas/checkpoint";
 
 export interface ApprovalFilters {
   status?: string;
@@ -60,14 +61,16 @@ export function useDecideApproval() {
       id,
       decision,
       reason,
+      override,
     }: {
       id: string;
       decision: "approved" | "rejected" | "changes_requested";
       reason?: string;
+      override?: CheckpointDecisionInput["override"];
     }) =>
       apiFetch<CheckpointDto>(`/approvals/${id}/decide`, {
         method: "POST",
-        body: { decision, reason },
+        body: { decision, reason, override },
       }),
     onSuccess: (_data, vars) => {
       toast.success(DECISION_TOASTS[vars.decision] ?? "已处理");

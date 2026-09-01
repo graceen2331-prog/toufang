@@ -15,6 +15,7 @@ import type {
 } from "@/generated/prisma/client";
 import type { TenantCtx } from "@/server/modules/brand/brand.repository";
 import { recordStatusEvent } from "@/server/modules/status-events/status-event.repository";
+import { hashContentInput, storedFindingSummary } from "./content-policy";
 
 export interface ContentAssetListParams {
   limit: number;
@@ -230,12 +231,13 @@ export const contentRepository = {
     toValue: string,
     reason: string | null,
     extra: Prisma.ContentAssetUncheckedUpdateInput = {},
-  ): Promise<void> {
-    await prisma.$transaction(async (tx) => {
-      await tx.contentAsset.updateMany({
-        where: { id, tenantId: ctx.orgId, deletedAt: null },
+  ): Promise<boolean> {
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.contentAsset.updateMany({
+        where: { id, tenantId: ctx.orgId, deletedAt: null, status: fromValue },
         data: { status: toValue, updatedBy: ctx.userId ?? null, ...extra },
       });
+      if (updated.count !== 1) return false;
       await recordStatusEvent(
         {
           tenantId: ctx.orgId,
@@ -248,7 +250,23 @@ export const contentRepository = {
         },
         tx,
       );
+      return true;
     });
+  },
+
+  async setActiveReview(ctx: TenantCtx, id: string, reviewId: string): Promise<boolean> {
+    const updated = await prisma.contentAsset.updateMany({
+      where: { id, tenantId: ctx.orgId, deletedAt: null, status: "in_review" },
+      data: {
+        activeReviewId: reviewId,
+        approvedReviewId: null,
+        approvedCheckpointId: null,
+        approvedContentHash: null,
+        contentApprovedAt: null,
+        updatedBy: ctx.userId ?? null,
+      },
+    });
+    return updated.count === 1;
   },
 
   async createQueuedReview(ctx: TenantCtx, contentAssetId: string): Promise<ContentReview> {
@@ -287,12 +305,13 @@ export const contentRepository = {
     toValue: string,
     reason: string | null,
     extra: Prisma.ContentReviewUncheckedUpdateInput = {},
-  ): Promise<void> {
-    await prisma.$transaction(async (tx) => {
-      await tx.contentReview.updateMany({
-        where: { id, tenantId: ctx.orgId },
+  ): Promise<boolean> {
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.contentReview.updateMany({
+        where: { id, tenantId: ctx.orgId, status: fromValue },
         data: { status: toValue, ...extra },
       });
+      if (updated.count !== 1) return false;
       await recordStatusEvent(
         {
           tenantId: ctx.orgId,
@@ -305,6 +324,382 @@ export const contentRepository = {
         },
         tx,
       );
+      return true;
+    });
+  },
+
+  async recordReviewEvaluation(
+    ctx: TenantCtx,
+    reviewId: string,
+    input: {
+      decision: string;
+      riskLevel: string;
+      findings: object;
+      feedback: string;
+      inputHash: string;
+      ruleSetVersion: string;
+      deterministicSummary: object;
+      normalizationNotes: string[];
+      agentRunId: string;
+      promptKey: string | null;
+      promptVersion: string | null;
+      model: string | null;
+    },
+  ): Promise<boolean> {
+    const updated = await prisma.contentReview.updateMany({
+      where: { id: reviewId, tenantId: ctx.orgId, status: "reviewing" },
+      data: {
+        decision: input.decision,
+        riskLevel: input.riskLevel,
+        findings: input.findings as Prisma.InputJsonValue,
+        feedback: input.feedback,
+        inputHash: input.inputHash,
+        ruleSetVersion: input.ruleSetVersion,
+        deterministicSummary: input.deterministicSummary as Prisma.InputJsonValue,
+        normalizationNotes: input.normalizationNotes,
+        aiGenerated: true,
+        agentRunId: input.agentRunId,
+        promptKey: input.promptKey,
+        promptVersion: input.promptVersion,
+        model: input.model,
+      },
+    });
+    return updated.count === 1;
+  },
+
+  async decideContentCheckpoint(input: {
+    ctx: TenantCtx;
+    checkpointId: string;
+    decision: "approved" | "rejected" | "changes_requested";
+    reason: string | null;
+    override?: {
+      enabled: true;
+      category: "false_positive" | "evidence_verified" | "brand_authorized" | "other";
+      acknowledged_finding_ids: string[];
+    };
+  }) {
+    return prisma.$transaction(async (tx) => {
+      const checkpoint = await tx.humanCheckpoint.findFirst({
+        where: {
+          id: input.checkpointId,
+          tenantId: input.ctx.orgId,
+          type: "content",
+          entityType: "content_asset",
+          status: "pending",
+        },
+      });
+      if (!checkpoint?.entityId) return { kind: "not_pending" as const };
+
+      const asset = await tx.contentAsset.findFirst({
+        where: {
+          id: checkpoint.entityId,
+          tenantId: input.ctx.orgId,
+          deletedAt: null,
+          status: "in_review",
+        },
+      });
+      if (!asset?.activeReviewId) return { kind: "stale_review" as const };
+      const review = await tx.contentReview.findFirst({
+        where: {
+          id: asset.activeReviewId,
+          tenantId: input.ctx.orgId,
+          contentAssetId: asset.id,
+          status: "reviewing",
+        },
+      });
+      if (!review?.inputHash) return { kind: "evidence_missing" as const };
+
+      const payload =
+        checkpoint.payload && typeof checkpoint.payload === "object" && !Array.isArray(checkpoint.payload)
+          ? (checkpoint.payload as Record<string, unknown>)
+          : {};
+      if (payload.review_id !== review.id || payload.input_hash !== review.inputHash) {
+        return { kind: "evidence_mismatch" as const };
+      }
+      const currentHash = hashContentInput({
+        platform: asset.platform,
+        caption: asset.caption,
+        transcript: asset.transcript,
+        url: asset.url,
+      });
+      if (currentHash !== review.inputHash) return { kind: "content_changed" as const };
+
+      const findingSummary = storedFindingSummary(review.findings);
+      if (input.decision === "approved" && findingSummary.blockingIds.length > 0) {
+        return { kind: "blocking_findings" as const, findingIds: findingSummary.blockingIds };
+      }
+      if (input.decision === "approved" && findingSummary.advisoryHighIds.length > 0) {
+        const acknowledged = new Set(input.override?.acknowledged_finding_ids ?? []);
+        const allAcknowledged = findingSummary.advisoryHighIds.every((id) => acknowledged.has(id));
+        if (!input.override?.enabled || !allAcknowledged || (input.reason?.trim().length ?? 0) < 10) {
+          return {
+            kind: "override_required" as const,
+            findingIds: findingSummary.advisoryHighIds,
+          };
+        }
+      }
+
+      const decisionMetadata =
+        input.decision === "approved" && input.override
+          ? {
+              override: true,
+              category: input.override.category,
+              acknowledged_finding_ids: input.override.acknowledged_finding_ids,
+              review_id: review.id,
+              input_hash: review.inputHash,
+              rule_set_version: review.ruleSetVersion,
+            }
+          : {
+              override: false,
+              review_id: review.id,
+              input_hash: review.inputHash,
+              rule_set_version: review.ruleSetVersion,
+            };
+      const now = new Date();
+      const checkpointUpdated = await tx.humanCheckpoint.updateMany({
+        where: { id: checkpoint.id, tenantId: input.ctx.orgId, status: "pending" },
+        data: {
+          status: input.decision,
+          decidedBy: input.ctx.userId ?? null,
+          decidedAt: now,
+          decisionReason: input.reason,
+          decisionMetadata,
+        },
+      });
+      if (checkpointUpdated.count !== 1) return { kind: "not_pending" as const };
+
+      const reviewUpdated = await tx.contentReview.updateMany({
+        where: { id: review.id, tenantId: input.ctx.orgId, status: "reviewing" },
+        data: {
+          status: "completed",
+          finalDecision: input.decision,
+          reviewerId: input.ctx.userId ?? null,
+          checkpointId: checkpoint.id,
+          overrideMetadata: decisionMetadata,
+          completedAt: now,
+        },
+      });
+      if (reviewUpdated.count !== 1) throw new Error("内容审核状态已变化");
+
+      const assetTarget =
+        input.decision === "approved"
+          ? "approved"
+          : input.decision === "rejected"
+            ? "rejected"
+            : "revision_requested";
+      const assetUpdated = await tx.contentAsset.updateMany({
+        where: {
+          id: asset.id,
+          tenantId: input.ctx.orgId,
+          status: "in_review",
+          activeReviewId: review.id,
+        },
+        data: {
+          status: assetTarget,
+          activeReviewId: null,
+          approvedReviewId: input.decision === "approved" ? review.id : null,
+          approvedCheckpointId: input.decision === "approved" ? checkpoint.id : null,
+          approvedContentHash: input.decision === "approved" ? review.inputHash : null,
+          contentApprovedAt: input.decision === "approved" ? now : null,
+          updatedBy: input.ctx.userId ?? null,
+        },
+      });
+      if (assetUpdated.count !== 1) throw new Error("内容资产审核状态已变化");
+
+      const campaignCreator = await tx.campaignCreator.findFirst({
+        where: { id: asset.campaignCreatorId, tenantId: input.ctx.orgId, deletedAt: null },
+        select: { contentStatus: true },
+      });
+      if (!campaignCreator) throw new Error("Campaign 达人不存在");
+      const creatorTarget = input.decision === "approved" ? "approved" : "submitted";
+      if (campaignCreator.contentStatus !== creatorTarget) {
+        const creatorUpdated = await tx.campaignCreator.updateMany({
+          where: {
+            id: asset.campaignCreatorId,
+            tenantId: input.ctx.orgId,
+            deletedAt: null,
+            contentStatus: campaignCreator.contentStatus,
+          },
+          data: { contentStatus: creatorTarget, updatedBy: input.ctx.userId ?? null },
+        });
+        if (creatorUpdated.count !== 1) throw new Error("Campaign 达人内容状态已变化");
+        await recordStatusEvent(
+          {
+            tenantId: input.ctx.orgId,
+            entityType: "campaign_creator",
+            entityId: asset.campaignCreatorId,
+            field: "content_status",
+            fromValue: campaignCreator.contentStatus,
+            toValue: creatorTarget,
+            actorId: input.ctx.userId ?? null,
+            reason: "内容人工审核决定",
+            metadata: decisionMetadata,
+          },
+          tx,
+        );
+      }
+
+      await recordStatusEvent(
+        {
+          tenantId: input.ctx.orgId,
+          entityType: "human_checkpoint",
+          entityId: checkpoint.id,
+          fromValue: "pending",
+          toValue: input.decision,
+          actorId: input.ctx.userId ?? null,
+          reason: input.reason,
+          metadata: decisionMetadata,
+        },
+        tx,
+      );
+      await recordStatusEvent(
+        {
+          tenantId: input.ctx.orgId,
+          entityType: "content_review",
+          entityId: review.id,
+          fromValue: "reviewing",
+          toValue: "completed",
+          actorId: input.ctx.userId ?? null,
+          reason: "内容人工审核决定",
+          metadata: decisionMetadata,
+        },
+        tx,
+      );
+      await recordStatusEvent(
+        {
+          tenantId: input.ctx.orgId,
+          entityType: "content_asset",
+          entityId: asset.id,
+          fromValue: "in_review",
+          toValue: assetTarget,
+          actorId: input.ctx.userId ?? null,
+          reason: input.reason ?? "内容人工审核决定",
+          metadata: decisionMetadata,
+        },
+        tx,
+      );
+      return { kind: "decided" as const };
+    });
+  },
+
+  async publishWithApprovalEvidence(input: {
+    ctx: TenantCtx;
+    assetId: string;
+    fromStatus: "approved" | "scheduled";
+    toStatus: "scheduled" | "published";
+    reason: string | null;
+  }) {
+    return prisma.$transaction(async (tx) => {
+      const asset = await tx.contentAsset.findFirst({
+        where: {
+          id: input.assetId,
+          tenantId: input.ctx.orgId,
+          deletedAt: null,
+          status: input.fromStatus,
+        },
+      });
+      if (!asset) return { kind: "not_found_or_conflict" as const };
+      if (!asset.approvedReviewId || !asset.approvedCheckpointId || !asset.approvedContentHash) {
+        return { kind: "invalid_evidence" as const };
+      }
+      const [review, checkpoint, campaignCreator] = await Promise.all([
+        tx.contentReview.findFirst({
+          where: {
+            id: asset.approvedReviewId,
+            tenantId: input.ctx.orgId,
+            contentAssetId: asset.id,
+            status: "completed",
+            finalDecision: "approved",
+            inputHash: asset.approvedContentHash,
+            checkpointId: asset.approvedCheckpointId,
+          },
+        }),
+        tx.humanCheckpoint.findFirst({
+          where: {
+            id: asset.approvedCheckpointId,
+            tenantId: input.ctx.orgId,
+            type: "content",
+            entityType: "content_asset",
+            entityId: asset.id,
+            status: "approved",
+            decidedBy: { not: null },
+            decidedAt: { not: null },
+          },
+        }),
+        tx.campaignCreator.findFirst({
+          where: { id: asset.campaignCreatorId, tenantId: input.ctx.orgId, deletedAt: null },
+          select: { contentStatus: true },
+        }),
+      ]);
+      if (!review || !checkpoint || !campaignCreator) return { kind: "invalid_evidence" as const };
+      const currentHash = hashContentInput({
+        platform: asset.platform,
+        caption: asset.caption,
+        transcript: asset.transcript,
+        url: asset.url,
+      });
+      if (currentHash !== asset.approvedContentHash || campaignCreator.contentStatus !== "approved") {
+        return { kind: "invalid_evidence" as const };
+      }
+
+      const updated = await tx.contentAsset.updateMany({
+        where: {
+          id: asset.id,
+          tenantId: input.ctx.orgId,
+          deletedAt: null,
+          status: input.fromStatus,
+          approvedContentHash: asset.approvedContentHash,
+        },
+        data: {
+          status: input.toStatus,
+          ...(input.toStatus === "published" ? { publishedAt: new Date() } : {}),
+          updatedBy: input.ctx.userId ?? null,
+        },
+      });
+      if (updated.count !== 1) return { kind: "not_found_or_conflict" as const };
+      await recordStatusEvent(
+        {
+          tenantId: input.ctx.orgId,
+          entityType: "content_asset",
+          entityId: asset.id,
+          fromValue: input.fromStatus,
+          toValue: input.toStatus,
+          actorId: input.ctx.userId ?? null,
+          reason: input.reason,
+          metadata: {
+            approved_review_id: review.id,
+            approved_checkpoint_id: checkpoint.id,
+            approved_content_hash: asset.approvedContentHash,
+          },
+        },
+        tx,
+      );
+      if (input.toStatus === "published") {
+        const creatorUpdated = await tx.campaignCreator.updateMany({
+          where: {
+            id: asset.campaignCreatorId,
+            tenantId: input.ctx.orgId,
+            deletedAt: null,
+            contentStatus: "approved",
+          },
+          data: { contentStatus: "published", updatedBy: input.ctx.userId ?? null },
+        });
+        if (creatorUpdated.count !== 1) throw new Error("Campaign 达人内容状态已变化");
+        await recordStatusEvent(
+          {
+            tenantId: input.ctx.orgId,
+            entityType: "campaign_creator",
+            entityId: asset.campaignCreatorId,
+            field: "content_status",
+            fromValue: "approved",
+            toValue: "published",
+            actorId: input.ctx.userId ?? null,
+            reason: input.reason,
+          },
+          tx,
+        );
+      }
+      return { kind: "published" as const };
     });
   },
 

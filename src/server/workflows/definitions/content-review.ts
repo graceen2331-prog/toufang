@@ -8,6 +8,10 @@ import {
   rejectReviewFromWorkflow,
 } from "@/server/modules/content/content.workflow-actions";
 import { contentRepository } from "@/server/modules/content/content.repository";
+import {
+  evaluateDeterministicContent,
+  mergeContentReview,
+} from "@/server/modules/content/content-policy";
 import type { StepContext, WorkflowDefinition } from "../engine";
 
 function tenantCtx(ctx: StepContext) {
@@ -93,7 +97,41 @@ export const contentReviewWorkflow: WorkflowDefinition = {
           userMessage: `请审核以下达人内容：\n\n${JSON.stringify(context, null, 2)}`,
           createdBy: ctx.createdBy,
         });
-        return { review: output, agent_run_id: agentRunId };
+        const contentAsset = context.content_asset as Record<string, unknown>;
+        const brand = context.brand as Record<string, unknown>;
+        const brief = context.brief as Record<string, unknown>;
+        const deterministic = evaluateDeterministicContent({
+          platform: typeof contentAsset.platform === "string" ? contentAsset.platform : null,
+          caption: typeof contentAsset.caption === "string" ? contentAsset.caption : null,
+          transcript: typeof contentAsset.transcript === "string" ? contentAsset.transcript : null,
+          url: typeof contentAsset.url === "string" ? contentAsset.url : null,
+          brandRestrictedTerms: brand.restricted_terms,
+          briefContent: brief.content,
+        });
+        const review = mergeContentReview(output, deterministic);
+        if (input.review_id) {
+          const trace = await contentRepository.getAgentRunTrace(agentRunId);
+          const recorded = await contentRepository.recordReviewEvaluation(
+            tenantCtx(ctx),
+            input.review_id,
+            {
+              decision: review.decision,
+              riskLevel: review.risk_level,
+              findings: review.findings as unknown as object,
+              feedback: review.creator_feedback,
+              inputHash: review.input_hash,
+              ruleSetVersion: review.rule_set_version,
+              deterministicSummary: review.deterministic_summary as unknown as object,
+              normalizationNotes: review.normalization_notes,
+              agentRunId,
+              promptKey: trace?.promptKey ?? null,
+              promptVersion: trace?.promptVersion ?? null,
+              model: trace?.model ?? null,
+            },
+          );
+          if (!recorded) throw new Error("内容审核记录已失效，无法保存本次评估");
+        }
+        return { review, agent_run_id: agentRunId };
       },
       checkpoint: {
         type: "content",
@@ -107,6 +145,11 @@ export const contentReviewWorkflow: WorkflowDefinition = {
         },
         payload: (_ctx, output) => ({
           review: (output as { review?: ContentReviewOutput }).review ?? null,
+          review_id: workflowInput(_ctx).review_id ?? null,
+          input_hash:
+            (output as { review?: { input_hash?: string } }).review?.input_hash ?? null,
+          rule_set_version:
+            (output as { review?: { rule_set_version?: string } }).review?.rule_set_version ?? null,
         }),
         priority: "high",
         assigneeRole: "content_manager",

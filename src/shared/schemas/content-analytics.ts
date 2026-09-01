@@ -76,11 +76,18 @@ export const ReportExportSchema = z.object({
 });
 
 export interface ContentReviewFindingDto {
+  id?: string;
   type: string;
   severity: "low" | "medium" | "high";
   quote: string | null;
   issue: string;
   suggestion: string;
+  origin?: "deterministic" | "ai";
+  source?: "brand" | "brief" | "platform" | "system" | "ai";
+  rule_id?: string;
+  rule_version?: string;
+  blocking?: boolean;
+  field?: "caption" | "transcript" | "combined";
 }
 
 export interface ContentReviewDto {
@@ -92,6 +99,12 @@ export interface ContentReviewDto {
   findings: ContentReviewFindingDto[];
   feedback: string | null;
   reviewer_id: string | null;
+  input_hash: string | null;
+  rule_set_version: string | null;
+  final_decision: string | null;
+  checkpoint_id: string | null;
+  normalization_notes: string[];
+  override_metadata: Record<string, unknown>;
   ai_generated: boolean;
   model: string | null;
   prompt_key: string | null;
@@ -118,6 +131,8 @@ export interface ContentAssetDto {
   planned_publish_at: string | null;
   published_at: string | null;
   published_url: string | null;
+  approval_evidence_present: boolean;
+  content_approved_at: string | null;
   latest_review: ContentReviewDto | null;
   pending_workflow_run_id: string | null;
   pending_checkpoint_id: string | null;

@@ -10,7 +10,14 @@ export async function markReviewReviewing(ctx: TenantCtx, reviewId: string): Pro
   if (!review) throw new Error("内容审核记录不存在");
   if (review.status === "reviewing") return;
   assertTransition(CONTENT_REVIEW_STATUS, review.status, "reviewing");
-  await contentRepository.transitionReview(ctx, reviewId, review.status, "reviewing", "AI 开始审核");
+  const transitioned = await contentRepository.transitionReview(
+    ctx,
+    reviewId,
+    review.status,
+    "reviewing",
+    "AI 开始审核",
+  );
+  if (!transitioned) throw new Error("内容审核状态已变化");
 }
 
 export async function completeReviewFromWorkflow(
@@ -27,9 +34,21 @@ export async function completeReviewFromWorkflow(
   ]);
   if (!asset) throw new Error("内容资产不存在");
   if (!review) throw new Error("内容审核记录不存在");
+  if (review.status === "completed" && review.finalDecision) {
+    const expectedStatus =
+      review.finalDecision === "approved"
+        ? "approved"
+        : review.finalDecision === "rejected"
+          ? "rejected"
+          : "revision_requested";
+    if (asset.status !== expectedStatus) {
+      throw new Error("内容审批已完成，但资产状态与最终决定不一致");
+    }
+    return;
+  }
   if (review.status !== "completed") {
     assertTransition(CONTENT_REVIEW_STATUS, review.status, "completed");
-    await contentRepository.transitionReview(ctx, reviewId, review.status, "completed", "AI 审核完成并通过人工复核", {
+    const completed = await contentRepository.transitionReview(ctx, reviewId, review.status, "completed", "AI 审核完成并通过人工复核", {
       decision: output.decision,
       riskLevel: output.risk_level,
       findings: output.findings as unknown as object,
@@ -42,6 +61,7 @@ export async function completeReviewFromWorkflow(
       model: agentRun?.model ?? null,
       completedAt: new Date(),
     });
+    if (!completed) throw new Error("内容审核状态已变化");
   }
 
   const target =
@@ -53,11 +73,13 @@ export async function completeReviewFromWorkflow(
   if (asset.status !== target) {
     let fromStatus = asset.status;
     if (fromStatus === "submitted") {
-      await contentRepository.transitionAsset(ctx, contentAssetId, "submitted", "in_review", "内容审核结果补齐审核中状态");
+      const enteredReview = await contentRepository.transitionAsset(ctx, contentAssetId, "submitted", "in_review", "内容审核结果补齐审核中状态");
+      if (!enteredReview) throw new Error("内容资产状态已变化");
       fromStatus = "in_review";
     }
     assertTransition(CONTENT_ASSET_STATUS, fromStatus, target);
-    await contentRepository.transitionAsset(ctx, contentAssetId, fromStatus, target, "内容审核结果落地");
+    const applied = await contentRepository.transitionAsset(ctx, contentAssetId, fromStatus, target, "内容审核结果落地");
+    if (!applied) throw new Error("内容资产状态已变化");
   }
 
   const nextSubStatus = output.decision === "approved" ? "approved" : "submitted";
@@ -85,16 +107,18 @@ export async function rejectReviewFromWorkflow(
   if (reviewId) {
     const review = await contentRepository.findReview(ctx, reviewId);
     if (review && review.status !== "completed") {
-      await contentRepository.transitionReview(ctx, review.id, review.status, "completed", "人工未通过内容审核", {
+      const completed = await contentRepository.transitionReview(ctx, review.id, review.status, "completed", "人工未通过内容审核", {
         decision: "needs_revision",
         riskLevel: "high",
         feedback: reason ?? "请根据审批意见修改后重新提交。",
         reviewerId: ctx.userId ?? null,
         completedAt: new Date(),
       });
+      if (!completed) throw new Error("内容审核状态已变化");
     }
   }
   if (asset.status === "in_review") {
-    await contentRepository.transitionAsset(ctx, contentAssetId, "in_review", "revision_requested", reason ?? "内容审核未通过");
+    const transitioned = await contentRepository.transitionAsset(ctx, contentAssetId, "in_review", "revision_requested", reason ?? "内容审核未通过");
+    if (!transitioned) throw new Error("内容资产状态已变化");
   }
 }

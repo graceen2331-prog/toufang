@@ -32,6 +32,8 @@ const decide = vi.fn();
 const getUserNames = vi.fn();
 const onOutreachApprovalDecided = vi.fn();
 const decideReportCheckpoint = vi.fn();
+const decideContentCheckpoint = vi.fn();
+const onCheckpointDecided = vi.fn();
 
 vi.mock("./checkpoint.repository", () => ({
   checkpointRepository: {
@@ -50,6 +52,14 @@ vi.mock("@/server/modules/outreach/outreach.service", () => ({
 
 vi.mock("@/server/modules/analytics/analytics.service", () => ({
   decideReportCheckpoint,
+}));
+
+vi.mock("@/server/modules/content/content.service", () => ({
+  decideContentCheckpoint,
+}));
+
+vi.mock("@/server/workflows/engine", () => ({
+  onCheckpointDecided,
 }));
 
 describe("decideCheckpoint 外联审批联动", () => {
@@ -103,5 +113,58 @@ describe("decideCheckpoint 正式报告原子审批", () => {
       null,
     );
     expect(decide).not.toHaveBeenCalled();
+  });
+});
+
+describe("decideCheckpoint 内容合规原子审批", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const contentCheckpoint = {
+      ...pendingCheckpoint,
+      workflowRunId: "workflow-1",
+      type: "content",
+      entityType: "content_asset",
+      entityId: "asset-1",
+      title: "内容审核复核",
+    };
+    findById
+      .mockResolvedValueOnce(contentCheckpoint)
+      .mockResolvedValueOnce({ ...contentCheckpoint, status: "approved", decidedBy: "user-1" });
+    decideContentCheckpoint.mockResolvedValue(undefined);
+    getUserNames.mockResolvedValue(new Map([["user-1", "林星澜"]]));
+  });
+
+  it("先由内容领域事务落地审批证据，再恢复工作流做幂等收尾", async () => {
+    const { decideCheckpoint } = await import("./checkpoint.service");
+    const override = {
+      enabled: true as const,
+      category: "evidence_verified" as const,
+      acknowledged_finding_ids: ["finding-1"],
+    };
+
+    await decideCheckpoint(
+      { orgId: "org-1", userId: "user-1" },
+      "checkpoint-1",
+      "approved",
+      "已核验全部风险证据，可以批准",
+      override,
+    );
+
+    expect(decideContentCheckpoint).toHaveBeenCalledWith(
+      { orgId: "org-1", userId: "user-1" },
+      "checkpoint-1",
+      {
+        decision: "approved",
+        reason: "已核验全部风险证据，可以批准",
+        override,
+      },
+    );
+    expect(decide).not.toHaveBeenCalled();
+    expect(onCheckpointDecided).toHaveBeenCalledWith(
+      { orgId: "org-1", userId: "user-1" },
+      "workflow-1",
+      "checkpoint-1",
+      "approved",
+    );
   });
 });

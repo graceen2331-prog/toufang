@@ -2,14 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findAsset = vi.fn();
 const transitionAsset = vi.fn();
+const setActiveReview = vi.fn();
 const findActiveWorkflow = vi.fn();
 const createQueuedReview = vi.fn();
 const startWorkflow = vi.fn();
+const runAgent = vi.fn();
 
 vi.mock("./content.repository", () => ({
   contentRepository: {
     findAsset,
     transitionAsset,
+    setActiveReview,
     findActiveWorkflow,
     createQueuedReview,
   },
@@ -17,6 +20,10 @@ vi.mock("./content.repository", () => ({
 
 vi.mock("@/server/workflows/engine", () => ({
   startWorkflow,
+}));
+
+vi.mock("@/server/ai/agents/run-agent", () => ({
+  runAgent,
 }));
 
 vi.mock("@/server/modules/campaign/campaign.repository", () => ({
@@ -63,6 +70,17 @@ describe("内容审核审批门", () => {
     findActiveWorkflow.mockResolvedValue(null);
     createQueuedReview.mockResolvedValue({ id: "review-1" });
     startWorkflow.mockResolvedValue({ id: "run-1" });
+    runAgent.mockResolvedValue({
+      output: {
+        revised_caption: "改好的标题文案",
+        revised_transcript: "改好的口播稿",
+        change_summary: ["删除高风险表达", "补充购物车 CTA"],
+        creator_message: "已根据审核意见改好。",
+      },
+      agentRunId: "agent-1",
+    });
+    transitionAsset.mockResolvedValue(true);
+    setActiveReview.mockResolvedValue(true);
   });
 
   it("不允许绕过审批中心直接把审核中内容标记为已过审", async () => {
@@ -107,6 +125,11 @@ describe("内容审核审批门", () => {
       },
     );
     expect(transitionAsset).not.toHaveBeenCalled();
+    expect(setActiveReview).toHaveBeenCalledWith(
+      { orgId: "org-1", userId: "user-1" },
+      "asset-1",
+      "review-1",
+    );
   });
 
   it("已提交内容发起审核时，工作流创建成功后才进入审核中", async () => {
@@ -122,6 +145,13 @@ describe("内容审核审批门", () => {
       "submitted",
       "in_review",
       "发起内容审核",
+      {
+        activeReviewId: "review-1",
+        approvedReviewId: null,
+        approvedCheckpointId: null,
+        approvedContentHash: null,
+        contentApprovedAt: null,
+      },
     );
     expect(startWorkflow.mock.invocationCallOrder[0]).toBeLessThan(
       transitionAsset.mock.invocationCallOrder[0]!,

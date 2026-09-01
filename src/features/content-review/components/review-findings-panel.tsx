@@ -8,6 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { useDecideApproval } from "@/features/approvals/queries";
 import {
@@ -39,6 +48,12 @@ function FindingList({ findings }: { findings: ContentReviewFindingDto[] }) {
             <Badge variant={finding.severity === "high" ? "destructive" : "secondary"}>
               {severityLabel[finding.severity]}风险
             </Badge>
+            {finding.origin && (
+              <Badge variant="outline">
+                {finding.origin === "deterministic" ? "确定性规则" : "AI 建议"}
+              </Badge>
+            )}
+            {finding.blocking && <Badge variant="destructive">必须修改</Badge>}
           </div>
           {finding.quote && (
             <p className="mt-2 rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
@@ -130,6 +145,7 @@ function ActiveWorkflowRecovery({
 
 export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }) {
   const [confirmApprove, setConfirmApprove] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
   const startReview = useStartContentReview();
   const decide = useDecideApproval();
   const queryClient = useQueryClient();
@@ -150,6 +166,12 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
     : asset.latest_review?.findings ?? [];
   const feedback = asset.pending_feedback ?? asset.latest_review?.feedback ?? null;
   const hasHighRisk = findings.some((finding) => finding.severity === "high");
+  const blockingFindings = findings.filter(
+    (finding) => finding.severity === "high" && finding.blocking,
+  );
+  const advisoryHighFindingIds = findings
+    .filter((finding) => finding.severity === "high" && !finding.blocking && finding.id)
+    .map((finding) => finding.id!);
   const hasActiveWorkflow = !!asset.pending_workflow_run_id;
   const canRetryStalledReview = asset.status === "in_review" && !hasActiveWorkflow;
   const canStart =
@@ -177,18 +199,37 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
     void queryClient.invalidateQueries({ queryKey: contentReviewKeys.detail(asset.id) });
   };
 
-  const decideCheckpoint = (decision: "approved" | "rejected" | "changes_requested") => {
+  const decideCheckpoint = (
+    decision: "approved" | "rejected" | "changes_requested",
+    options?: { reason?: string; overrideHighRisk?: boolean },
+  ) => {
     if (!pendingCheckpointId) return;
     decide.mutate(
       {
         id: pendingCheckpointId,
         decision,
         reason:
-          decision === "approved"
+          options?.reason ??
+          (decision === "approved"
             ? undefined
-            : feedback ?? "请根据 AI 审核意见修改后重新提交。",
+            : (feedback ?? "请根据 AI 审核意见修改后重新提交。")),
+        ...(options?.overrideHighRisk
+          ? {
+              override: {
+                enabled: true as const,
+                category: "evidence_verified" as const,
+                acknowledged_finding_ids: advisoryHighFindingIds,
+              },
+            }
+          : {}),
       },
-      { onSuccess: refresh },
+      {
+        onSuccess: () => {
+          setConfirmApprove(false);
+          setOverrideReason("");
+          refresh();
+        },
+      },
     );
   };
 
@@ -212,11 +253,13 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
               <>
                 <Button
                   variant="outline"
-                  disabled={decide.isPending}
-                  onClick={() => (hasHighRisk ? setConfirmApprove(true) : decideCheckpoint("approved"))}
+                  disabled={decide.isPending || blockingFindings.length > 0}
+                  onClick={() =>
+                    hasHighRisk ? setConfirmApprove(true) : decideCheckpoint("approved")
+                  }
                 >
                   <Check className="size-4" />
-                  批准
+                  {blockingFindings.length > 0 ? "必须修改" : "批准"}
                 </Button>
                 <Button
                   variant="outline"
@@ -259,19 +302,44 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
         )}
         <FindingList findings={findings} />
       </CardContent>
-      <ConfirmDialog
+      <Dialog
         open={confirmApprove}
-        onOpenChange={setConfirmApprove}
-        title="确认批准高风险内容？"
-        description="AI 审核发现高风险问题。批准后内容会进入已过审状态，请确认已人工复核风险。"
-        confirmLabel="批准"
-        destructive={false}
-        pending={decide.isPending}
-        onConfirm={() => {
-          decideCheckpoint("approved");
-          setConfirmApprove(false);
+        onOpenChange={(open) => {
+          setConfirmApprove(open);
+          if (!open) setOverrideReason("");
         }}
-      />
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>确认覆盖 AI 高风险建议？</DialogTitle>
+            <DialogDescription>
+              这不是对确定性禁词规则的放行。请说明已核验的依据，系统会记录确认的风险项和审批人。
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            rows={4}
+            placeholder="覆盖说明（至少 10 个字）"
+            value={overrideReason}
+            onChange={(event) => setOverrideReason(event.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmApprove(false)}>
+              取消
+            </Button>
+            <Button
+              disabled={overrideReason.trim().length < 10 || decide.isPending}
+              onClick={() =>
+                decideCheckpoint("approved", {
+                  reason: overrideReason.trim(),
+                  overrideHighRisk: true,
+                })
+              }
+            >
+              确认并批准
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

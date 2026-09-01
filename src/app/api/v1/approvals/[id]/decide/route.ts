@@ -12,6 +12,7 @@ export const POST = createApiHandler({
       ctx.params.id!,
       ctx.body.decision,
       ctx.body.reason,
+      ctx.body.override,
     );
     ctx.setAuditEntity("human_checkpoint", checkpoint.id, {
       decision: ctx.body.decision,

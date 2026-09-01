@@ -75,6 +75,11 @@ async function ensureContentAsset(
         caption,
         transcript: caption,
         url: `https://example.com/content/${campaignCreatorId.slice(-12)}`,
+        activeReviewId: null,
+        approvedReviewId: null,
+        approvedCheckpointId: null,
+        approvedContentHash: null,
+        contentApprovedAt: null,
         updatedBy: createdBy,
       },
     });

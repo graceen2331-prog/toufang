@@ -221,7 +221,7 @@ async function submitReviewPublishAndMetric(
   await dialog.getByRole("textbox").nth(1).fill("小红书");
   await dialog
     .getByPlaceholder("粘贴达人初稿文案，AI 审核会结合 Brief 与品牌禁用词检查。")
-    .fill("这支焕亮维C精华有医疗级焕亮体验，7 天治愈暗沉。点击购物车领取双十一专属优惠。");
+    .fill("连续 28 天记录温和提亮体验，并提醒按肤质理性选择。点击购物车领取双十一专属优惠。");
   await dialog.getByRole("button", { name: "提交内容" }).click();
   await expect(page.getByText("内容已提交")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(contentTitle).first()).toBeVisible({ timeout: 15_000 });
@@ -232,7 +232,11 @@ async function submitReviewPublishAndMetric(
     timeout: 45_000,
   });
   await page.getByRole("button", { name: "批准" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
+  const overrideDialog = page.getByRole("dialog");
+  await overrideDialog
+    .getByPlaceholder("覆盖说明（至少 10 个字）")
+    .fill("已逐项核验内容与品牌依据，确认可以进入发布流程");
+  await overrideDialog.getByRole("button", { name: "确认并批准" }).click();
   await expect(page.getByText("已过审").first()).toBeVisible({ timeout: 45_000 });
 
   await page.getByRole("button", { name: "标记发布" }).click();

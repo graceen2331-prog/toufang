@@ -35,15 +35,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isHighRiskContent(checkpoint: CheckpointDto): boolean {
-  if (checkpoint.type !== "content") return false;
+function contentRiskSummary(checkpoint: CheckpointDto): {
+  highRisk: boolean;
+  blocking: boolean;
+  advisoryFindingIds: string[];
+} {
+  if (checkpoint.type !== "content") {
+    return { highRisk: false, blocking: false, advisoryFindingIds: [] };
+  }
   const review = isRecord(checkpoint.payload.review) ? checkpoint.payload.review : null;
-  if (!review) return false;
-  if (review.risk_level === "high") return true;
-  return (
-    Array.isArray(review.findings) &&
-    review.findings.some((finding) => isRecord(finding) && finding.severity === "high")
-  );
+  if (!review) return { highRisk: false, blocking: false, advisoryFindingIds: [] };
+  const highFindings = Array.isArray(review.findings)
+    ? review.findings.filter((finding) => isRecord(finding) && finding.severity === "high")
+    : [];
+  return {
+    highRisk: highFindings.length > 0,
+    blocking: highFindings.some((finding) => finding.blocking === true),
+    advisoryFindingIds: highFindings
+      .filter((finding) => finding.blocking !== true && typeof finding.id === "string")
+      .map((finding) => finding.id as string),
+  };
 }
 
 export function ApprovalCard({
@@ -55,11 +66,13 @@ export function ApprovalCard({
 }) {
   const decide = useDecideApproval();
   const [approveOpen, setApproveOpen] = useState(false);
+  const [approveReason, setApproveReason] = useState("");
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const isPending = checkpoint.status === "pending";
   const isCompact = density === "compact";
-  const highRiskContent = isHighRiskContent(checkpoint);
+  const contentRisk = contentRiskSummary(checkpoint);
+  const highRiskContent = contentRisk.highRisk;
 
   const content = (
     <div className={cn(isCompact ? "space-y-3" : "flex items-start justify-between gap-4")}>
@@ -99,10 +112,10 @@ export function ApprovalCard({
               size="sm"
               className={cn(isCompact && "h-8 flex-1")}
               onClick={() => setApproveOpen(true)}
-              disabled={decide.isPending}
+              disabled={decide.isPending || contentRisk.blocking}
             >
               <Check className="size-4" />
-              批准
+              {contentRisk.blocking ? "必须修改" : "批准"}
             </Button>
             <Button
               size="sm"
@@ -130,25 +143,71 @@ export function ApprovalCard({
         </Card>
       )}
 
-      <ConfirmDialog
-        open={approveOpen}
-        onOpenChange={setApproveOpen}
-        title={highRiskContent ? "确认批准高风险内容？" : "确认批准？"}
-        description={
-          highRiskContent
-            ? "AI 审核发现高风险问题。请确认已完成人工复核，并承担继续执行该内容的责任。"
-            : `批准后「${checkpoint.title}」对应的动作将继续执行。`
-        }
-        confirmLabel="批准"
-        destructive={false}
-        pending={decide.isPending}
-        onConfirm={() =>
-          decide.mutate(
-            { id: checkpoint.id, decision: "approved" },
-            { onSuccess: () => setApproveOpen(false) },
-          )
-        }
-      />
+      {highRiskContent ? (
+        <Dialog
+          open={approveOpen}
+          onOpenChange={(open) => {
+            setApproveOpen(open);
+            if (!open) setApproveReason("");
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>确认覆盖 AI 高风险建议？</DialogTitle>
+              <DialogDescription>
+                请填写已核验的依据。品牌禁词或 Brief 确定性规则不能通过此操作放行。
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              placeholder="覆盖说明（至少 10 个字）"
+              rows={4}
+              value={approveReason}
+              onChange={(event) => setApproveReason(event.target.value)}
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setApproveOpen(false)}>
+                取消
+              </Button>
+              <Button
+                disabled={approveReason.trim().length < 10 || decide.isPending}
+                onClick={() =>
+                  decide.mutate(
+                    {
+                      id: checkpoint.id,
+                      decision: "approved",
+                      reason: approveReason.trim(),
+                      override: {
+                        enabled: true,
+                        category: "evidence_verified",
+                        acknowledged_finding_ids: contentRisk.advisoryFindingIds,
+                      },
+                    },
+                    { onSuccess: () => setApproveOpen(false) },
+                  )
+                }
+              >
+                确认并批准
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : (
+        <ConfirmDialog
+          open={approveOpen}
+          onOpenChange={setApproveOpen}
+          title="确认批准？"
+          description={`批准后「${checkpoint.title}」对应的动作将继续执行。`}
+          confirmLabel="批准"
+          destructive={false}
+          pending={decide.isPending}
+          onConfirm={() =>
+            decide.mutate(
+              { id: checkpoint.id, decision: "approved" },
+              { onSuccess: () => setApproveOpen(false) },
+            )
+          }
+        />
+      )}
 
       <Dialog
         open={rejectOpen}

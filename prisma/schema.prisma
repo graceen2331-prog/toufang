@@ -694,6 +694,11 @@ model ContentAsset {
   plannedPublishAt  DateTime? @map("planned_publish_at")
   publishedAt       DateTime? @map("published_at")
   publishedUrl      String?   @map("published_url")
+  activeReviewId    String?   @map("active_review_id")
+  approvedReviewId  String?   @map("approved_review_id")
+  approvedCheckpointId String? @map("approved_checkpoint_id")
+  approvedContentHash String?  @map("approved_content_hash")
+  contentApprovedAt DateTime?  @map("content_approved_at")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
   createdBy         String?   @map("created_by")
@@ -705,6 +710,7 @@ model ContentAsset {
   @@index([tenantId])
   @@index([campaignCreatorId])
   @@index([tenantId, status])
+  @@index([tenantId, activeReviewId])
   @@map("content_assets")
 }
 
@@ -718,6 +724,13 @@ model ContentReview {
   findings       Json      @default("[]") // [{type, severity, quote, issue, suggestion}]
   feedback       String? // 面向达人的修改意见
   reviewerId     String?   @map("reviewer_id") // 人工审核人
+  inputHash      String?   @map("input_hash")
+  ruleSetVersion String?   @map("rule_set_version")
+  deterministicSummary Json @default("{}") @map("deterministic_summary")
+  normalizationNotes Json @default("[]") @map("normalization_notes")
+  finalDecision  String?   @map("final_decision") // approved | changes_requested | rejected
+  checkpointId   String?   @unique @map("checkpoint_id")
+  overrideMetadata Json    @default("{}") @map("override_metadata")
   // AI 溯源
   aiGenerated    Boolean   @default(false) @map("ai_generated")
   agentRunId     String?   @map("agent_run_id")
@@ -1001,6 +1014,7 @@ model HumanCheckpoint {
   decidedBy     String?   @map("decided_by")
   decidedAt     DateTime? @map("decided_at")
   decisionReason String?  @map("decision_reason")
+  decisionMetadata Json   @default("{}") @map("decision_metadata")
   createdAt     DateTime  @default(now()) @map("created_at")
   createdBy     String?   @map("created_by")
 

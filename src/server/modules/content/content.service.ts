@@ -10,6 +10,7 @@ import {
   assertTransition,
 } from "@/shared/constants/status";
 import type { StartWorkflowResponseDto } from "@/shared/schemas/workflow";
+import type { CheckpointDecisionInput } from "@/shared/schemas/checkpoint";
 import type {
   ContentAssetDto,
   ContentReviewDto,
@@ -30,6 +31,7 @@ function findingsFromJson(value: unknown): ContentReviewFindingDto[] {
       if (!item || typeof item !== "object") return null;
       const row = item as Record<string, unknown>;
       return {
+        ...(typeof row.id === "string" ? { id: row.id } : {}),
         type: typeof row.type === "string" ? row.type : "unknown",
         severity:
           row.severity === "high" || row.severity === "medium" || row.severity === "low"
@@ -38,6 +40,20 @@ function findingsFromJson(value: unknown): ContentReviewFindingDto[] {
         quote: typeof row.quote === "string" ? row.quote : null,
         issue: typeof row.issue === "string" ? row.issue : "",
         suggestion: typeof row.suggestion === "string" ? row.suggestion : "",
+        ...(row.origin === "deterministic" || row.origin === "ai" ? { origin: row.origin } : {}),
+        ...(row.source === "brand" ||
+        row.source === "brief" ||
+        row.source === "platform" ||
+        row.source === "system" ||
+        row.source === "ai"
+          ? { source: row.source }
+          : {}),
+        ...(typeof row.rule_id === "string" ? { rule_id: row.rule_id } : {}),
+        ...(typeof row.rule_version === "string" ? { rule_version: row.rule_version } : {}),
+        ...(typeof row.blocking === "boolean" ? { blocking: row.blocking } : {}),
+        ...(row.field === "caption" || row.field === "transcript" || row.field === "combined"
+          ? { field: row.field }
+          : {}),
       };
     })
     .filter((item): item is ContentReviewFindingDto => !!item && !!item.issue);
@@ -53,6 +69,17 @@ function reviewToDto(review: ContentReview): ContentReviewDto {
     findings: findingsFromJson(review.findings),
     feedback: review.feedback,
     reviewer_id: review.reviewerId,
+    input_hash: review.inputHash,
+    rule_set_version: review.ruleSetVersion,
+    final_decision: review.finalDecision,
+    checkpoint_id: review.checkpointId,
+    normalization_notes: Array.isArray(review.normalizationNotes)
+      ? review.normalizationNotes.filter((item): item is string => typeof item === "string")
+      : [],
+    override_metadata:
+      review.overrideMetadata && typeof review.overrideMetadata === "object"
+        ? (review.overrideMetadata as Record<string, unknown>)
+        : {},
     ai_generated: review.aiGenerated,
     model: review.model,
     prompt_key: review.promptKey,
@@ -102,6 +129,10 @@ function assetToDto(asset: ContentAssetWithRelations): ContentAssetDto {
     planned_publish_at: asset.plannedPublishAt?.toISOString() ?? null,
     published_at: asset.publishedAt?.toISOString() ?? null,
     published_url: asset.publishedUrl,
+    approval_evidence_present: Boolean(
+      asset.approvedReviewId && asset.approvedCheckpointId && asset.approvedContentHash,
+    ),
+    content_approved_at: asset.contentApprovedAt?.toISOString() ?? null,
     latest_review: asset.reviews[0] ? reviewToDto(asset.reviews[0]) : null,
     pending_workflow_run_id: pending.workflowRunId,
     pending_checkpoint_id: pending.checkpointId,
@@ -192,9 +223,35 @@ export async function transitionContentAssetStatus(
   if (asset.status === "in_review" && ["approved", "revision_requested", "rejected"].includes(to)) {
     throw new ApiError("CONFLICT", "请在审批中心完成内容审核，不能绕过审批门");
   }
+  if ((asset.status === "approved" || asset.status === "scheduled") &&
+      (to === "scheduled" || to === "published")) {
+    const result = await contentRepository.publishWithApprovalEvidence({
+      ctx,
+      assetId: id,
+      fromStatus: asset.status,
+      toStatus: to,
+      reason: reason ?? null,
+    });
+    if (result.kind === "invalid_evidence") {
+      throw new ApiError(
+        "CONTENT_APPROVAL_EVIDENCE_INVALID",
+        "当前内容缺少与正文一致的审批证据，请重新发起内容审核",
+      );
+    }
+    if (result.kind !== "published") throw new ApiError("CONFLICT", "内容发布状态已变化");
+    return getContentAsset(ctx, id);
+  }
   const extra: Record<string, unknown> = {};
   if (to === "published") extra.publishedAt = new Date();
-  await contentRepository.transitionAsset(ctx, id, asset.status, to, reason ?? null, extra);
+  const transitioned = await contentRepository.transitionAsset(
+    ctx,
+    id,
+    asset.status,
+    to,
+    reason ?? null,
+    extra,
+  );
+  if (!transitioned) throw new ApiError("CONFLICT", "内容状态已变化，请刷新后重试");
   return getContentAsset(ctx, id);
 }
 
@@ -224,7 +281,24 @@ export async function startContentReviewWorkflow(
     input: { review_id: review.id, instruction: instruction ?? null },
   });
   if (shouldMarkInReview) {
-    await contentRepository.transitionAsset(ctx, contentAssetId, asset.status, "in_review", "发起内容审核");
+    const activated = await contentRepository.transitionAsset(
+      ctx,
+      contentAssetId,
+      asset.status,
+      "in_review",
+      "发起内容审核",
+      {
+        activeReviewId: review.id,
+        approvedReviewId: null,
+        approvedCheckpointId: null,
+        approvedContentHash: null,
+        contentApprovedAt: null,
+      },
+    );
+    if (!activated) throw new ApiError("CONFLICT", "内容状态已变化，请刷新后重试");
+  } else {
+    const activated = await contentRepository.setActiveReview(ctx, contentAssetId, review.id);
+    if (!activated) throw new ApiError("CONFLICT", "内容审核状态已变化，请刷新后重试");
   }
   return workflowResponse(run);
 }
@@ -342,4 +416,35 @@ export async function onContentReviewDecided(
     null,
     decision === "rejected" ? "内容审核被驳回" : "内容审核要求修改",
   );
+}
+
+export async function decideContentCheckpoint(
+  ctx: TenantCtx,
+  checkpointId: string,
+  input: CheckpointDecisionInput,
+): Promise<void> {
+  const result = await contentRepository.decideContentCheckpoint({
+    ctx,
+    checkpointId,
+    decision: input.decision,
+    reason: input.reason?.trim() || null,
+    override: input.override,
+  });
+  if (result.kind === "decided") return;
+  if (result.kind === "blocking_findings") {
+    throw new ApiError(
+      "CONTENT_BLOCKING_FINDINGS",
+      "内容命中品牌禁词或 Brief 确定性规则，必须修改后重新审核",
+      { finding_ids: result.findingIds },
+    );
+  }
+  if (result.kind === "override_required") {
+    throw new ApiError(
+      "CONTENT_OVERRIDE_REQUIRED",
+      "批准 AI 高风险建议时必须填写至少 10 个字的说明并确认全部风险项",
+      { finding_ids: result.findingIds },
+    );
+  }
+  if (result.kind === "not_pending") throw new ApiError("APPROVAL_ALREADY_DECIDED");
+  throw new ApiError("CONFLICT", "内容审核证据已变化，请刷新后重新处理");
 }
