@@ -28,6 +28,15 @@ test.describe("W7 内容审核与数据分析", () => {
     await page.goto("/content-review");
     await expect(page.getByText("林小鹿 28 天焕亮实测初稿")).toBeVisible({ timeout: 15_000 });
     await page.getByText("林小鹿 28 天焕亮实测初稿").click();
+    // 演示库可能保留上次异常中断的运行：先通过产品恢复入口取消，再重新发起。
+    const cancelButton = page.getByRole("button", { name: "取消本次审核" });
+    if (await cancelButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await cancelButton.click();
+      await page.getByRole("dialog").getByRole("button", { name: "确认取消" }).click();
+      await expect(page.getByRole("button", { name: /发起 AI 审核/ })).toBeVisible({
+        timeout: 15_000,
+      });
+    }
     const startButton = page.getByRole("button", { name: /发起 AI 审核/ });
     if (await startButton.isVisible({ timeout: 3000 }).catch(() => false)) {
       await startButton.click();
@@ -48,9 +57,7 @@ test.describe("W7 内容审核与数据分析", () => {
     await expect(page.getByText("曝光").first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("趋势")).toBeVisible();
     await expect(page.getByText("AI Insights")).toBeVisible();
-    await expect(
-      page.getByText(/成分实测内容观看稳定增长|评论区出现禁用词讨论/).first(),
-    ).toBeVisible();
+    await expect(page.getByText(/缓解措施：|建议负责人：/).first()).toBeVisible();
   });
 
   test("已导出报告保持只读，不能事后修改", async ({ page }) => {

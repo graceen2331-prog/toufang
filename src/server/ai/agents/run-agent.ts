@@ -58,8 +58,8 @@ export async function runAgent<TSchema extends z.ZodType>(
       orderBy: { createdAt: "desc" },
       select: { model: true },
     });
-    await prisma.agentRun.update({
-      where: { id: run.id },
+    const committed = await prisma.agentRun.updateMany({
+      where: { id: run.id, tenantId: options.tenantId, status: "running" },
       data: {
         status: "completed",
         output: output as object,
@@ -67,16 +67,22 @@ export async function runAgent<TSchema extends z.ZodType>(
         completedAt: new Date(),
       },
     });
+    if (committed.count === 0) {
+      console.info(`[agent] 丢弃已取消 Agent 的迟到结果：run=${run.id}`);
+    }
     return { output, agentRunId: run.id };
   } catch (err) {
-    await prisma.agentRun.update({
-      where: { id: run.id },
+    const committed = await prisma.agentRun.updateMany({
+      where: { id: run.id, tenantId: options.tenantId, status: "running" },
       data: {
         status: "failed",
         failureReason: err instanceof Error ? err.message : String(err),
         completedAt: new Date(),
       },
     });
+    if (committed.count === 0) {
+      console.info(`[agent] 丢弃已取消 Agent 的迟到失败：run=${run.id}`);
+    }
     throw err;
   }
 }

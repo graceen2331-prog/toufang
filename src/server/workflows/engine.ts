@@ -4,7 +4,8 @@ import { publishWorkflowEvent } from "@/server/events/pubsub";
 import { getWorkflowStepQueue } from "@/server/jobs/queues";
 import { ApiError } from "@/server/api/envelope";
 import type { TenantCtx } from "@/server/modules/brand/brand.repository";
-import type { Prisma, WorkflowRun } from "@/generated/prisma/client";
+import { workflowLifecycleRepository } from "@/server/modules/workflow/workflow-lifecycle.repository";
+import type { WorkflowRun } from "@/generated/prisma/client";
 
 // ============================================================
 // 工作流定义模型：步骤顺序硬编码在代码里（Orchestrator 不用 LLM）
@@ -117,26 +118,6 @@ async function enqueueStep(tenantId: string, runId: string, stepKey: string): Pr
   );
 }
 
-async function setRunStatus(
-  runId: string,
-  status: string,
-  extra: Prisma.WorkflowRunUncheckedUpdateInput = {},
-): Promise<void> {
-  await prisma.workflowRun.update({ where: { id: runId }, data: { status, ...extra } });
-  await publishWorkflowEvent(runId, { type: "run_status", status });
-}
-
-async function setStepStatus(
-  runId: string,
-  stepId: string,
-  stepKey: string,
-  status: string,
-  extra: Prisma.WorkflowStepUncheckedUpdateInput = {},
-): Promise<void> {
-  await prisma.workflowStep.update({ where: { id: stepId }, data: { status, ...extra } });
-  await publishWorkflowEvent(runId, { type: "step_status", step_key: stepKey, step_status: status });
-}
-
 async function notifyWorkflowUser(input: {
   tenantId: string;
   userId: string | null;
@@ -214,12 +195,22 @@ export async function executeStep(tenantId: string, runId: string, stepKey: stri
   if (!stepDef || !stepRow) throw new Error(`workflow step ${stepKey} 不存在`);
   if (["completed", "waiting_for_human", "skipped"].includes(stepRow.status)) return;
 
+  const runReady = await workflowLifecycleRepository.ensureRunRunning(tenantId, runId);
+  if (!runReady) return;
   if (run.status !== "running") {
-    await setRunStatus(runId, "running", run.startedAt ? {} : { startedAt: new Date() });
+    await publishWorkflowEvent(runId, { type: "run_status", status: "running" });
   }
-  await setStepStatus(runId, stepRow.id, stepKey, "running", {
-    attempt: { increment: 1 },
-    startedAt: new Date(),
+  const stepStarted = await workflowLifecycleRepository.startStep({
+    tenantId,
+    runId,
+    stepId: stepRow.id,
+    stepKey,
+  });
+  if (!stepStarted) return;
+  await publishWorkflowEvent(runId, {
+    type: "step_status",
+    step_key: stepKey,
+    step_status: "running",
   });
 
   const ctx: StepContext = {
@@ -232,29 +223,36 @@ export async function executeStep(tenantId: string, runId: string, stepKey: stri
 
   const output = await stepDef.run(ctx); // 抛错则由 BullMQ 重试 / onStepFailed 收尾
 
-  await setStepStatus(runId, stepRow.id, stepKey, stepDef.checkpoint ? "waiting_for_human" : "completed", {
-    output: output as object,
-    ...(stepDef.checkpoint ? {} : { completedAt: new Date() }),
-  });
-
   if (stepDef.checkpoint) {
     const cp = stepDef.checkpoint;
-    const checkpoint = await prisma.humanCheckpoint.create({
-      data: {
-        tenantId,
-        workflowRunId: runId,
+    const checkpoint = await workflowLifecycleRepository.waitForCheckpoint({
+      tenantId,
+      runId,
+      stepId: stepRow.id,
+      stepKey,
+      stepOutput: output,
+      checkpoint: {
         type: cp.type,
-        status: "pending",
         title: cp.title(ctx, output),
         summary: cp.summary?.(ctx, output) ?? null,
         entityType: run.subjectType,
         entityId: run.subjectId,
-        payload: (cp.payload?.(ctx, output) ?? {}) as object,
+        payload: cp.payload?.(ctx, output) ?? {},
         priority: cp.priority ?? "normal",
         assigneeRole: cp.assigneeRole ?? null,
         createdBy: run.createdBy,
       },
     });
+    if (!checkpoint) {
+      console.info(`[workflow] 丢弃取消后的迟到步骤结果：run=${runId} step=${stepKey}`);
+      return;
+    }
+    await publishWorkflowEvent(runId, {
+      type: "step_status",
+      step_key: stepKey,
+      step_status: "waiting_for_human",
+    });
+    await publishWorkflowEvent(runId, { type: "run_status", status: "waiting_for_human" });
     await notifyCheckpointRole({
       tenantId,
       roleKey: checkpoint.assigneeRole,
@@ -263,9 +261,24 @@ export async function executeStep(tenantId: string, runId: string, stepKey: stri
       linkUrl: "/approvals",
       priority: checkpoint.priority,
     });
-    await setRunStatus(runId, "waiting_for_human");
     return;
   }
+
+  const committed = await workflowLifecycleRepository.completeStep({
+    tenantId,
+    runId,
+    stepId: stepRow.id,
+    output,
+  });
+  if (!committed) {
+    console.info(`[workflow] 丢弃取消后的迟到步骤结果：run=${runId} step=${stepKey}`);
+    return;
+  }
+  await publishWorkflowEvent(runId, {
+    type: "step_status",
+    step_key: stepKey,
+    step_status: "completed",
+  });
 
   await advanceAfter(tenantId, runId, stepKey);
 }
@@ -273,7 +286,7 @@ export async function executeStep(tenantId: string, runId: string, stepKey: stri
 /** 推进到下一步或完成 run */
 async function advanceAfter(tenantId: string, runId: string, completedStepKey: string): Promise<void> {
   const run = await prisma.workflowRun.findFirst({ where: { id: runId, tenantId } });
-  if (!run) return;
+  if (!run || run.status !== "running") return;
   const def = getWorkflowDefinition(run.workflowKey);
   const idx = def.steps.findIndex((s) => s.key === completedStepKey);
   const next = def.steps[idx + 1];
@@ -285,10 +298,13 @@ async function advanceAfter(tenantId: string, runId: string, completedStepKey: s
 
   // 全部完成
   const outputs = await collectOutputs(runId);
-  await setRunStatus(runId, "completed", {
-    output: outputs as object,
-    completedAt: new Date(),
+  const completed = await workflowLifecycleRepository.completeRun({
+    tenantId,
+    runId,
+    output: outputs,
   });
+  if (!completed) return;
+  await publishWorkflowEvent(runId, { type: "run_status", status: "completed" });
   await notifyWorkflowUser({
     tenantId,
     userId: run.createdBy,
@@ -314,14 +330,28 @@ export async function onStepFailed(
     console.warn(`[workflow] 忽略孤儿失败回调：run=${runId} step=${stepKey} 不存在`);
     return;
   }
-  const stepRow = await prisma.workflowStep.findFirst({ where: { runId, stepKey } });
+  const stepRow = await prisma.workflowStep.findFirst({
+    where: { tenantId, runId, stepKey },
+    select: { id: true },
+  });
+  const failed = await workflowLifecycleRepository.failRun({
+    tenantId,
+    runId,
+    stepId: stepRow?.id ?? null,
+    error,
+  });
+  if (!failed) {
+    console.info(`[workflow] 丢弃终态运行的迟到失败回调：run=${runId} step=${stepKey}`);
+    return;
+  }
   if (stepRow) {
-    await setStepStatus(runId, stepRow.id, stepKey, "failed", {
-      failureReason: error,
-      completedAt: new Date(),
+    await publishWorkflowEvent(runId, {
+      type: "step_status",
+      step_key: stepKey,
+      step_status: "failed",
     });
   }
-  await setRunStatus(runId, "failed", { failureReason: error, completedAt: new Date() });
+  await publishWorkflowEvent(runId, { type: "run_status", status: "failed" });
   await notifyWorkflowUser({
     tenantId,
     userId: run?.createdBy ?? null,
@@ -335,34 +365,35 @@ export async function onStepFailed(
 
 /** 手动重试失败的 run：重置失败步骤 → 重新入队 */
 export async function retryWorkflow(ctx: TenantCtx, runId: string): Promise<void> {
-  const run = await prisma.workflowRun.findFirst({ where: { id: runId, tenantId: ctx.orgId } });
-  if (!run) throw new ApiError("RESOURCE_NOT_FOUND", "工作流不存在");
-  if (run.status !== "failed") throw new ApiError("WORKFLOW_NOT_RESUMABLE", "仅失败的工作流可重试");
-  const failedStep = await prisma.workflowStep.findFirst({
-    where: { runId, status: "failed" },
-    orderBy: { stepOrder: "asc" },
+  const result = await workflowLifecycleRepository.resetFailedRun(ctx, runId);
+  if (result.kind === "not_found") throw new ApiError("RESOURCE_NOT_FOUND", "工作流不存在");
+  if (result.kind === "not_failed") {
+    throw new ApiError("WORKFLOW_NOT_RESUMABLE", "仅失败的工作流可重试");
+  }
+  if (result.kind !== "reset") {
+    throw new ApiError("WORKFLOW_NOT_RESUMABLE", "工作流状态已变化，暂时无法重试");
+  }
+  await publishWorkflowEvent(runId, { type: "run_status", status: "queued" });
+  await publishWorkflowEvent(runId, {
+    type: "step_status",
+    step_key: result.stepKey,
+    step_status: "pending",
   });
-  if (!failedStep) throw new ApiError("WORKFLOW_NOT_RESUMABLE", "找不到失败步骤");
-  await prisma.workflowStep.update({
-    where: { id: failedStep.id },
-    data: { status: "pending", failureReason: null },
-  });
-  await setRunStatus(runId, "queued", { failureReason: null });
   // 重试用独立 jobId 避免与旧 job 冲突
   await getWorkflowStepQueue().add(
-    `${runId}.${failedStep.stepKey}.retry-${Date.now()}`,
-    { tenantId: ctx.orgId, runId, stepKey: failedStep.stepKey },
+    `${runId}.${result.stepKey}.retry-${Date.now()}`,
+    { tenantId: ctx.orgId, runId, stepKey: result.stepKey },
   );
 }
 
 /** 取消运行中的工作流 */
 export async function cancelWorkflow(ctx: TenantCtx, runId: string): Promise<void> {
-  const run = await prisma.workflowRun.findFirst({ where: { id: runId, tenantId: ctx.orgId } });
-  if (!run) throw new ApiError("RESOURCE_NOT_FOUND", "工作流不存在");
-  if (["completed", "failed", "cancelled"].includes(run.status)) {
+  const result = await workflowLifecycleRepository.cancelRun(ctx, runId);
+  if (result.kind === "not_found") throw new ApiError("RESOURCE_NOT_FOUND", "工作流不存在");
+  if (result.kind !== "cancelled") {
     throw new ApiError("WORKFLOW_NOT_RESUMABLE", "工作流已结束");
   }
-  await setRunStatus(runId, "cancelled", { completedAt: new Date() });
+  await publishWorkflowEvent(runId, { type: "run_status", status: "cancelled" });
 }
 
 /**
@@ -387,24 +418,38 @@ export async function onCheckpointDecided(
   if (!waitingStep) return;
 
   if (decision === "approved") {
-    await setStepStatus(workflowRunId, waitingStep.id, waitingStep.stepKey, "completed", {
-      completedAt: new Date(),
+    const resumed = await workflowLifecycleRepository.approveWaitingStep({
+      ctx,
+      runId: workflowRunId,
+      stepId: waitingStep.id,
     });
-    await setRunStatus(workflowRunId, "running");
+    if (!resumed) return;
+    await publishWorkflowEvent(workflowRunId, {
+      type: "step_status",
+      step_key: waitingStep.stepKey,
+      step_status: "completed",
+    });
+    await publishWorkflowEvent(workflowRunId, { type: "run_status", status: "running" });
     await advanceAfter(ctx.orgId, workflowRunId, waitingStep.stepKey);
     return;
   }
 
   // 驳回 / 要求修改：终止 run，交由定义的 onRejected 做业务收尾
   const checkpoint = await prisma.humanCheckpoint.findUnique({ where: { id: checkpointId } });
-  await setStepStatus(workflowRunId, waitingStep.id, waitingStep.stepKey, "failed", {
-    failureReason: `审批未通过：${checkpoint?.decisionReason ?? decision}`,
-    completedAt: new Date(),
+  const reason = `审批未通过：${checkpoint?.decisionReason ?? decision}`;
+  const rejected = await workflowLifecycleRepository.rejectWaitingStep({
+    ctx,
+    runId: workflowRunId,
+    stepId: waitingStep.id,
+    reason,
   });
-  await setRunStatus(workflowRunId, "cancelled", {
-    failureReason: `审批未通过：${checkpoint?.decisionReason ?? decision}`,
-    completedAt: new Date(),
+  if (!rejected) return;
+  await publishWorkflowEvent(workflowRunId, {
+    type: "step_status",
+    step_key: waitingStep.stepKey,
+    step_status: "failed",
   });
+  await publishWorkflowEvent(workflowRunId, { type: "run_status", status: "cancelled" });
   const def = getWorkflowDefinition(run.workflowKey);
   if (def.onRejected) {
     await def.onRejected(

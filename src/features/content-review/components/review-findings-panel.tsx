@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Play, RotateCcw, X } from "lucide-react";
+import { Ban, Check, ClockAlert, ExternalLink, Play, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,7 @@ import {
   contentReviewKeys,
   useStartContentReview,
 } from "@/features/content-review/queries";
+import { useCancelWorkflow, useWorkflowRun } from "@/features/workflows/queries";
 import type { ContentAssetDto, ContentReviewFindingDto } from "@/shared/schemas/content-analytics";
 
 const severityLabel: Record<string, string> = {
@@ -46,6 +48,82 @@ function FindingList({ findings }: { findings: ContentReviewFindingDto[] }) {
           <p className="mt-2 text-sm leading-6">{finding.suggestion}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ActiveWorkflowRecovery({
+  runId,
+  onRefresh,
+}: {
+  runId: string;
+  onRefresh: () => void;
+}) {
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const runQuery = useWorkflowRun(runId, { refetchInterval: 3000 });
+  const cancelWorkflow = useCancelWorkflow();
+  const startedAt = runQuery.data?.started_at ?? runQuery.data?.created_at;
+  const elapsedMs = startedAt ? runQuery.dataUpdatedAt - new Date(startedAt).getTime() : 0;
+  const looksStalled =
+    elapsedMs >= 5 * 60_000 &&
+    ["queued", "running", "retrying"].includes(runQuery.data?.status ?? "");
+
+  return (
+    <div
+      className={
+        looksStalled
+          ? "rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-950"
+          : "rounded-lg border bg-muted/30 p-3"
+      }
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            {looksStalled && <ClockAlert className="size-4" />}
+            {looksStalled ? "本次审核耗时异常" : "本次审核正在运行"}
+          </p>
+          <p className="mt-1 text-xs leading-5 opacity-80">
+            {looksStalled
+              ? "可能是任务拥堵或后台执行服务未运行。可先查看详情；确认无进展后取消，再重新发起审核。"
+              : "可以查看实时步骤；如需停止本次审核，请使用取消操作。"}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/ai-runs/${runId}`}>
+              <ExternalLink className="size-4" />
+              查看运行详情
+            </Link>
+          </Button>
+          <PermissionGate permission="content:review">
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={cancelWorkflow.isPending}
+              onClick={() => setConfirmCancel(true)}
+            >
+              <Ban className="size-4" />
+              取消本次审核
+            </Button>
+          </PermissionGate>
+        </div>
+      </div>
+      <ConfirmDialog
+        open={confirmCancel}
+        onOpenChange={setConfirmCancel}
+        title="取消本次 AI 审核？"
+        description="取消后，本次运行的迟到结果不会再写入。页面刷新后可重新发起新的审核。"
+        confirmLabel="确认取消"
+        pending={cancelWorkflow.isPending}
+        onConfirm={() =>
+          cancelWorkflow.mutate(runId, {
+            onSuccess: () => {
+              setConfirmCancel(false);
+              onRefresh();
+            },
+          })
+        }
+      />
     </div>
   );
 }
@@ -160,6 +238,10 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
             )}
           </div>
         </PermissionGate>
+
+        {asset.pending_workflow_run_id && (
+          <ActiveWorkflowRecovery runId={asset.pending_workflow_run_id} onRefresh={refresh} />
+        )}
 
         {!asset.brief_id && (
           <p className="text-sm text-destructive">Brief 缺失：请先生成并批准 Brief。</p>

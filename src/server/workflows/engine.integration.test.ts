@@ -112,6 +112,76 @@ describe.skipIf(!hasInfra)("工作流引擎（集成）", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("运行中取消：步骤迟到成功或失败都不能覆盖 cancelled 终态", async () => {
+    const ctx = { orgId, userId };
+    const workflowKey = `cancel-race-${Date.now()}`;
+    let releaseStep: (() => void) | undefined;
+    let markStepEntered: (() => void) | undefined;
+    const stepGate = new Promise<void>((resolve) => {
+      releaseStep = resolve;
+    });
+    const stepEntered = new Promise<void>((resolve) => {
+      markStepEntered = resolve;
+    });
+    engine.registerWorkflow({
+      key: workflowKey,
+      label: "取消竞态测试",
+      steps: [
+        {
+          key: "slow_step",
+          label: "慢步骤",
+          run: async () => {
+            markStepEntered?.();
+            await stepGate;
+            return { late: true };
+          },
+        },
+      ],
+    });
+
+    const run = await engine.startWorkflow(ctx, { key: workflowKey });
+    const execution = engine.executeStep(orgId, run.id, "slow_step");
+    await stepEntered;
+
+    await engine.cancelWorkflow(ctx, run.id);
+    releaseStep?.();
+    await execution;
+    await engine.onStepFailed(orgId, run.id, "slow_step", "迟到失败回调");
+
+    const state = await prisma.workflowRun.findUnique({
+      where: { id: run.id },
+      include: { steps: true },
+    });
+    expect(state?.status).toBe("cancelled");
+    expect(state?.steps[0]?.status).toBe("skipped");
+    expect(state?.steps[0]?.output).toEqual({});
+    expect(state?.failureReason).toBe("用户取消工作流");
+  });
+
+  it("等待审批时取消：关闭待审批点并跳过等待步骤", async () => {
+    const ctx = { orgId, userId };
+    const run = await engine.startWorkflow(ctx, {
+      key: "strategy",
+      subjectType: "campaign",
+      subjectId: campaignId,
+    });
+    await engine.executeStep(orgId, run.id, "gather_context");
+    await engine.executeStep(orgId, run.id, "generate_strategy");
+
+    await engine.cancelWorkflow(ctx, run.id);
+
+    const state = await prisma.workflowRun.findUnique({
+      where: { id: run.id },
+      include: { steps: true, checkpoints: true },
+    });
+    expect(state?.status).toBe("cancelled");
+    expect(state?.steps.find((step) => step.stepKey === "generate_strategy")?.status).toBe(
+      "skipped",
+    );
+    expect(state?.checkpoints[0]?.status).toBe("rejected");
+    expect(state?.checkpoints[0]?.decisionReason).toBe("用户取消工作流");
+  });
+
   it("审批驳回：run 终止且必须填原因", async () => {
     const ctx = { orgId, userId };
     const run = await engine.startWorkflow(ctx, {
