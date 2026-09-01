@@ -213,6 +213,76 @@ describe.skipIf(!hasInfra)("工作流引擎（集成）", () => {
     ).rejects.toThrow();
   });
 
+  it("安全步骤失败后创建新运行，旧终态不变且重复请求幂等", async () => {
+    const ctx = { orgId, userId };
+    const workflowKey = `safe-retry-${Date.now()}`;
+    engine.registerWorkflow({
+      key: workflowKey,
+      label: "安全重试测试",
+      manualRetrySafeStepKeys: ["generate"],
+      steps: [
+        {
+          key: "generate",
+          label: "纯生成步骤",
+          run: async () => {
+            throw new Error("模拟生成失败");
+          },
+        },
+      ],
+    });
+
+    const source = await engine.startWorkflow(ctx, { key: workflowKey });
+    await expect(engine.executeStep(orgId, source.id, "generate")).rejects.toThrow("模拟生成失败");
+    await engine.onStepFailed(orgId, source.id, "generate", "模拟生成失败");
+
+    const retried = await engine.retryWorkflow(ctx, source.id);
+    const repeated = await engine.retryWorkflow(ctx, source.id);
+    expect(repeated.id).toBe(retried.id);
+    expect(retried.id).not.toBe(source.id);
+
+    const [sourceState, retriedState] = await Promise.all([
+      prisma.workflowRun.findUnique({ where: { id: source.id } }),
+      prisma.workflowRun.findUnique({ where: { id: retried.id }, include: { steps: true } }),
+    ]);
+    expect(sourceState?.status).toBe("failed");
+    expect(sourceState?.completedAt).not.toBeNull();
+    expect(retriedState?.retryOfRunId).toBe(source.id);
+    expect(retriedState?.status).toBe("queued");
+    expect(retriedState?.steps).toEqual([
+      expect.objectContaining({ stepKey: "generate", status: "pending", attempt: 0 }),
+    ]);
+  });
+
+  it("可能产生业务副作用的失败步骤禁止直接重试", async () => {
+    const ctx = { orgId, userId };
+    const workflowKey = `unsafe-retry-${Date.now()}`;
+    engine.registerWorkflow({
+      key: workflowKey,
+      label: "危险重试测试",
+      manualRetrySafeStepKeys: [],
+      steps: [
+        {
+          key: "apply",
+          label: "落库步骤",
+          run: async () => {
+            throw new Error("模拟落库失败");
+          },
+        },
+      ],
+    });
+
+    const source = await engine.startWorkflow(ctx, { key: workflowKey });
+    await expect(engine.executeStep(orgId, source.id, "apply")).rejects.toThrow("模拟落库失败");
+    await engine.onStepFailed(orgId, source.id, "apply", "模拟落库失败");
+
+    await expect(engine.retryWorkflow(ctx, source.id)).rejects.toMatchObject({
+      code: "WORKFLOW_NOT_RESUMABLE",
+    });
+    expect(
+      await prisma.workflowRun.count({ where: { tenantId: orgId, retryOfRunId: source.id } }),
+    ).toBe(0);
+  });
+
   it("租户隔离：其他组织无法操作本组织的工作流", async () => {
     const otherOrg = await prisma.organization.create({
       data: { name: "隔离测试组织", slug: `engine-iso-${Date.now()}` },

@@ -426,7 +426,7 @@ export const WORKFLOW_RUN_STATUS: StateMachine = {
     waiting_for_human: ["running", "cancelled", "failed"],
     retrying: ["running", "failed", "cancelled"],
     completed: [],
-    failed: ["queued"], // 手动重试
+    failed: [], // 手动重试会创建新运行，旧运行保持终态
     cancelled: [],
   },
 };

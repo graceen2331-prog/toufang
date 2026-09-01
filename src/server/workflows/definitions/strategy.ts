@@ -14,6 +14,7 @@ import type { WorkflowDefinition } from "../engine";
 export const strategyWorkflow: WorkflowDefinition = {
   key: "strategy",
   label: "策略生成",
+  manualRetrySafeStepKeys: ["gather_context", "generate_strategy"],
   steps: [
     {
       key: "gather_context",

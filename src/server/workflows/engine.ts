@@ -41,6 +41,11 @@ export interface WorkflowDefinition {
   key: string;
   label: string;
   steps: WorkflowStepDefinition[];
+  /**
+   * 允许手动新建运行重试的失败步骤白名单。
+   * 只能列出尚未产生业务副作用的步骤；落库、外发、付款和正式报告步骤一律不得列入。
+   */
+  manualRetrySafeStepKeys?: readonly string[];
   /** 审批被驳回时的收尾处理（可选） */
   onRejected?: (ctx: StepContext, reason: string | null) => Promise<void>;
   /** 全部步骤完成后的收尾处理（可选） */
@@ -363,27 +368,30 @@ export async function onStepFailed(
   });
 }
 
-/** 手动重试失败的 run：重置失败步骤 → 重新入队 */
-export async function retryWorkflow(ctx: TenantCtx, runId: string): Promise<void> {
-  const result = await workflowLifecycleRepository.resetFailedRun(ctx, runId);
+/** 手动重试失败的 run：旧运行保持终态，创建完整的新运行。 */
+export async function retryWorkflow(ctx: TenantCtx, runId: string): Promise<WorkflowRun> {
+  const source = await workflowLifecycleRepository.findRetrySource(ctx, runId);
+  if (!source) throw new ApiError("RESOURCE_NOT_FOUND", "工作流不存在");
+  const def = getWorkflowDefinition(source.workflowKey);
+  const result = await workflowLifecycleRepository.createRetryRun({
+    ctx,
+    runId,
+    safeStepKeys: def.manualRetrySafeStepKeys ?? [],
+    steps: def.steps.map((step) => step.key),
+  });
   if (result.kind === "not_found") throw new ApiError("RESOURCE_NOT_FOUND", "工作流不存在");
   if (result.kind === "not_failed") {
     throw new ApiError("WORKFLOW_NOT_RESUMABLE", "仅失败的工作流可重试");
   }
-  if (result.kind !== "reset") {
-    throw new ApiError("WORKFLOW_NOT_RESUMABLE", "工作流状态已变化，暂时无法重试");
+  if (result.kind === "unsafe_step") {
+    throw new ApiError("WORKFLOW_NOT_RESUMABLE", "该失败步骤可能已产生业务影响，请从业务页面重新发起");
   }
-  await publishWorkflowEvent(runId, { type: "run_status", status: "queued" });
-  await publishWorkflowEvent(runId, {
-    type: "step_status",
-    step_key: result.stepKey,
-    step_status: "pending",
-  });
-  // 重试用独立 jobId 避免与旧 job 冲突
-  await getWorkflowStepQueue().add(
-    `${runId}.${result.stepKey}.retry-${Date.now()}`,
-    { tenantId: ctx.orgId, runId, stepKey: result.stepKey },
-  );
+  if (result.kind === "active_conflict") {
+    throw new ApiError("CONFLICT", "同一业务对象已有进行中的工作流");
+  }
+  await enqueueStep(ctx.orgId, result.run.id, def.steps[0]!.key);
+  await publishWorkflowEvent(result.run.id, { type: "run_status", status: "queued" });
+  return result.run;
 }
 
 /** 取消运行中的工作流 */

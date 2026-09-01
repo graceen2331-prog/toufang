@@ -70,6 +70,7 @@ async function gatherContentContext(ctx: StepContext): Promise<Record<string, un
 export const contentReviewWorkflow: WorkflowDefinition = {
   key: "content_review",
   label: "内容审核",
+  manualRetrySafeStepKeys: ["gather_context", "evaluate_content"],
   steps: [
     { key: "gather_context", label: "汇集审核上下文", run: gatherContentContext },
     {

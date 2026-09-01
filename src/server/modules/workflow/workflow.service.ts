@@ -4,6 +4,7 @@ import { paginate } from "@/server/api/pagination";
 import { monthlyAiSpend } from "@/server/ai/router";
 import type { TenantCtx } from "@/server/modules/brand/brand.repository";
 import { workflowRepository } from "@/server/modules/workflow/workflow.repository";
+import { getWorkflowDefinition } from "@/server/workflows/engine";
 import type {
   AgentRunDto,
   AiUsageSummaryDto,
@@ -68,6 +69,21 @@ export async function getWorkflowRun(ctx: TenantCtx, id: string): Promise<Workfl
     started_at: a.startedAt.toISOString(),
     completed_at: a.completedAt?.toISOString() ?? null,
   }));
+  const failedStep = run.steps.find((step) => step.status === "failed");
+  const retrySafe = failedStep
+    ? (getWorkflowDefinition(run.workflowKey).manualRetrySafeStepKeys ?? []).includes(
+        failedStep.stepKey,
+      )
+    : false;
+  const canRetry = run.status === "failed" && retrySafe && !run.retriedBy;
+  const retryBlockedReason =
+    run.status !== "failed"
+      ? null
+      : run.retriedBy
+        ? "该运行已创建重试任务"
+        : !retrySafe
+          ? "失败发生在可能产生业务影响的步骤，请从对应业务页面重新发起"
+          : null;
 
   return {
     id: run.id,
@@ -78,6 +94,10 @@ export async function getWorkflowRun(ctx: TenantCtx, id: string): Promise<Workfl
     input: (run.input as Record<string, unknown>) ?? {},
     output: (run.output as Record<string, unknown>) ?? {},
     failure_reason: run.failureReason,
+    can_retry: canRetry,
+    retry_blocked_reason: retryBlockedReason,
+    retry_of_run_id: run.retryOf?.id ?? null,
+    retried_by_run_id: run.retriedBy?.id ?? null,
     steps,
     agent_runs: agentRuns,
     pending_checkpoint_id:

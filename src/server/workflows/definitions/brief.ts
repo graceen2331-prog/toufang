@@ -28,6 +28,7 @@ function briefToPlainText(brief: BriefOutput): string {
 export const briefWorkflow: WorkflowDefinition = {
   key: "brief",
   label: "Brief 生成",
+  manualRetrySafeStepKeys: ["gather_context", "generate_brief"],
   steps: [
     { key: "gather_context", label: "汇集上下文", run: gatherCampaignContext },
     {

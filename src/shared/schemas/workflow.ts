@@ -47,6 +47,10 @@ export interface WorkflowRunDetailDto {
   input: Record<string, unknown>;
   output: Record<string, unknown>;
   failure_reason: string | null;
+  can_retry: boolean;
+  retry_blocked_reason: string | null;
+  retry_of_run_id: string | null;
+  retried_by_run_id: string | null;
   steps: WorkflowStepDto[];
   agent_runs: AgentRunDto[];
   pending_checkpoint_id: string | null;
@@ -56,6 +60,16 @@ export interface WorkflowRunDetailDto {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
+}
+
+export interface RetryWorkflowResponseDto extends StartWorkflowResponseDto {
+  retry_of_run_id: string;
+}
+
+export interface WorkflowExecutionHealthDto {
+  status: "healthy" | "degraded" | "offline" | "unavailable" | "not_applicable";
+  checked_at: string;
+  message: string | null;
 }
 
 export interface AiUsageSummaryDto {

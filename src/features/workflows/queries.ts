@@ -5,10 +5,12 @@ import { toast } from "sonner";
 import { apiFetch, apiFetchList, ApiClientError } from "@/lib/api";
 import type {
   AiUsageSummaryDto,
+  RetryWorkflowResponseDto,
   StartWorkflowResponseDto,
   StrategyVersionDto,
   WorkflowRunDetailDto,
   WorkflowRunListItemDto,
+  WorkflowExecutionHealthDto,
 } from "@/shared/schemas/workflow";
 
 export interface WorkflowRunFilters {
@@ -21,6 +23,7 @@ export const workflowKeys = {
   all: ["workflows"] as const,
   list: (params: WorkflowRunFilters) => ["workflows", "list", params] as const,
   detail: (id: string) => ["workflows", "detail", id] as const,
+  health: (id: string) => ["workflows", "health", id] as const,
   usage: ["workflows", "usage"] as const,
   strategyVersions: (campaignId: string) =>
     ["workflows", "strategy-versions", campaignId] as const,
@@ -51,6 +54,15 @@ export function useWorkflowRun(id: string, opts?: { refetchInterval?: number }) 
     queryKey: workflowKeys.detail(id),
     queryFn: () => apiFetch<WorkflowRunDetailDto>(`/workflow-runs/${id}`),
     refetchInterval: opts?.refetchInterval,
+  });
+}
+
+export function useWorkflowExecutionHealth(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: workflowKeys.health(id),
+    queryFn: () => apiFetch<WorkflowExecutionHealthDto>(`/workflow-runs/${id}/health`),
+    enabled,
+    refetchInterval: enabled ? 10_000 : false,
   });
 }
 
@@ -97,7 +109,7 @@ export function useRetryWorkflow() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<{ retried: boolean }>(`/workflow-runs/${id}/retry`, { method: "POST" }),
+      apiFetch<RetryWorkflowResponseDto>(`/workflow-runs/${id}/retry`, { method: "POST" }),
     onSuccess: (_data, id) => {
       toast.success("已发起重试");
       void queryClient.invalidateQueries({ queryKey: workflowKeys.detail(id) });

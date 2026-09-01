@@ -1,8 +1,11 @@
 "use client";
 
 import { use, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { RotateCcw, XCircle } from "lucide-react";
+import { AlertTriangle, RotateCcw, XCircle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -23,6 +26,7 @@ import { WorkflowProgress } from "@/components/shared/workflow-progress";
 import {
   useCancelWorkflow,
   useRetryWorkflow,
+  useWorkflowExecutionHealth,
   useWorkflowRun,
 } from "@/features/workflows/queries";
 import { AGENT_RUN_STATUS, WORKFLOW_RUN_STATUS } from "@/shared/constants/status";
@@ -30,6 +34,7 @@ import { formatCost, WORKFLOW_KEY_LABELS } from "@/shared/schemas/workflow";
 
 /** 可取消的运行状态 */
 const CANCELLABLE_STATUSES = ["queued", "running", "waiting_for_human"];
+const HEALTH_RELEVANT_STATUSES = ["queued", "retrying", "running"];
 
 function formatDuration(startedAt: string, completedAt: string | null): string {
   if (!completedAt) return "—";
@@ -39,7 +44,12 @@ function formatDuration(startedAt: string, completedAt: string | null): string {
 
 export default function AiRunDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const { data: run, isLoading, isError, error, refetch } = useWorkflowRun(id);
+  const health = useWorkflowExecutionHealth(
+    id,
+    HEALTH_RELEVANT_STATUSES.includes(run?.status ?? ""),
+  );
   const retry = useRetryWorkflow();
   const cancel = useCancelWorkflow();
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -65,14 +75,23 @@ export default function AiRunDetailPage({ params }: { params: Promise<{ id: stri
             actions={
               <PermissionGate permission="ai:run">
                 <span className="flex items-center gap-2">
-                  {run.status === "failed" && (
+                  {run.can_retry && (
                     <Button
                       variant="outline"
                       disabled={retry.isPending}
-                      onClick={() => retry.mutate(run.id)}
+                      onClick={() =>
+                        retry.mutate(run.id, {
+                          onSuccess: (result) => router.push(`/ai-runs/${result.workflow_run_id}`),
+                        })
+                      }
                     >
                       <RotateCcw className="size-4" />
                       {retry.isPending ? "重试中…" : "重试"}
+                    </Button>
+                  )}
+                  {run.retried_by_run_id && (
+                    <Button variant="outline" asChild>
+                      <Link href={`/ai-runs/${run.retried_by_run_id}`}>查看重试运行</Link>
                     </Button>
                   )}
                   {CANCELLABLE_STATUSES.includes(run.status) && (
@@ -85,6 +104,34 @@ export default function AiRunDetailPage({ params }: { params: Promise<{ id: stri
               </PermissionGate>
             }
           />
+
+          {health.data && ["degraded", "offline", "unavailable"].includes(health.data.status) && (
+            <Alert variant={health.data.status === "offline" ? "destructive" : "default"}>
+              <AlertTriangle />
+              <AlertTitle>执行服务状态异常</AlertTitle>
+              <AlertDescription>{health.data.message}</AlertDescription>
+            </Alert>
+          )}
+
+          {(run.retry_of_run_id || run.retried_by_run_id || run.retry_blocked_reason) && (
+            <Alert>
+              <RotateCcw />
+              <AlertTitle>重试记录</AlertTitle>
+              <AlertDescription>
+                {run.retry_of_run_id && (
+                  <span>
+                    本运行由 <Link href={`/ai-runs/${run.retry_of_run_id}`}>上一次失败运行</Link> 新建。
+                  </span>
+                )}
+                {run.retried_by_run_id && (
+                  <span>
+                    已生成 <Link href={`/ai-runs/${run.retried_by_run_id}`}>新的重试运行</Link>，当前记录保持终态。
+                  </span>
+                )}
+                {!run.retry_of_run_id && !run.retried_by_run_id && run.retry_blocked_reason}
+              </AlertDescription>
+            </Alert>
+          )}
 
           <ConfirmDialog
             open={cancelOpen}

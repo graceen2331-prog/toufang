@@ -13,6 +13,7 @@ import type { WorkflowDefinition } from "../engine";
 export const creatorScoringWorkflow: WorkflowDefinition = {
   key: "creator_scoring",
   label: "达人评分",
+  manualRetrySafeStepKeys: ["gather_context", "collect_candidates", "score_creators"],
   steps: [
     { key: "gather_context", label: "汇集上下文", run: gatherCampaignContext },
     {

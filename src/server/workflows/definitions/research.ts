@@ -57,6 +57,7 @@ export async function gatherCampaignContext(ctx: StepContext): Promise<Record<st
 export const researchWorkflow: WorkflowDefinition = {
   key: "research",
   label: "市场研究",
+  manualRetrySafeStepKeys: ["gather_context", "generate_research"],
   steps: [
     { key: "gather_context", label: "汇集上下文", run: gatherCampaignContext },
     {

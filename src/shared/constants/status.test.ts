@@ -109,8 +109,8 @@ describe("工作流状态机", () => {
     expect(canTransition(WORKFLOW_RUN_STATUS, "waiting_for_human", "running")).toBe(true);
   });
 
-  it("失败后可手动重试（回到排队）", () => {
-    expect(canTransition(WORKFLOW_RUN_STATUS, "failed", "queued")).toBe(true);
+  it("失败运行保持终态，手动重试必须创建新运行", () => {
+    expect(canTransition(WORKFLOW_RUN_STATUS, "failed", "queued")).toBe(false);
   });
 });
 

@@ -36,7 +36,16 @@ export const workflowRepository = {
         steps: { orderBy: { stepOrder: "asc" } },
         agentRuns: { orderBy: { createdAt: "asc" } },
         checkpoints: { orderBy: { createdAt: "desc" }, take: 5 },
+        retryOf: { select: { id: true } },
+        retriedBy: { select: { id: true } },
       },
+    });
+  },
+
+  async findRunStatus(ctx: TenantCtx, id: string) {
+    return prisma.workflowRun.findFirst({
+      where: { id, tenantId: ctx.orgId },
+      select: { id: true, status: true, createdAt: true, startedAt: true },
     });
   },
 

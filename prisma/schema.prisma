@@ -883,6 +883,7 @@ model WorkflowRun {
   input         Json      @default("{}")
   output        Json      @default("{}")
   failureReason String?   @map("failure_reason")
+  retryOfRunId  String?   @unique @map("retry_of_run_id")
   startedAt     DateTime? @map("started_at")
   completedAt   DateTime? @map("completed_at")
   createdAt     DateTime  @default(now()) @map("created_at")
@@ -891,6 +892,8 @@ model WorkflowRun {
   steps       WorkflowStep[]
   agentRuns   AgentRun[]
   checkpoints HumanCheckpoint[]
+  retryOf     WorkflowRun?  @relation("WorkflowRunRetry", fields: [retryOfRunId], references: [id], onDelete: Restrict)
+  retriedBy   WorkflowRun?  @relation("WorkflowRunRetry")
 
   @@index([tenantId])
   @@index([tenantId, status])

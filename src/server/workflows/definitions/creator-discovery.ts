@@ -13,6 +13,7 @@ import type { WorkflowDefinition } from "../engine";
 export const creatorDiscoveryWorkflow: WorkflowDefinition = {
   key: "creator_discovery",
   label: "达人发现",
+  manualRetrySafeStepKeys: ["gather_context", "search_candidates", "match_creators"],
   steps: [
     { key: "gather_context", label: "汇集上下文", run: gatherCampaignContext },
     {

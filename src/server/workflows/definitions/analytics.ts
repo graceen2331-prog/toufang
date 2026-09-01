@@ -33,6 +33,13 @@ function sumMetrics(rows: Array<{ metrics: unknown }>): Record<string, number> {
 export const analyticsWorkflow: WorkflowDefinition = {
   key: "analytics",
   label: "效果分析",
+  manualRetrySafeStepKeys: [
+    "gather_metrics",
+    "normalize_metrics",
+    "compute_kpis",
+    "analyze_metrics",
+    "draft_report",
+  ],
   steps: [
     {
       key: "gather_metrics",

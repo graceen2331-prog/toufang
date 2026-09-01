@@ -414,57 +414,108 @@ export const workflowLifecycleRepository = {
     });
   },
 
-  /** 失败运行的同 run 重试。仅重置首个失败步骤，终态更新使用 CAS。 */
-  async resetFailedRun(ctx: TenantCtx, runId: string) {
-    return prisma.$transaction(async (tx) => {
-      const run = await tx.workflowRun.findFirst({
-        where: { id: runId, tenantId: ctx.orgId },
-        select: { status: true },
-      });
-      if (!run) return { kind: "not_found" as const };
-      if (run.status !== "failed") return { kind: "not_failed" as const };
-
-      const step = await tx.workflowStep.findFirst({
-        where: { tenantId: ctx.orgId, runId, status: "failed" },
-        orderBy: { stepOrder: "asc" },
-        select: { id: true, stepKey: true },
-      });
-      if (!step) return { kind: "no_failed_step" as const };
-
-      const runUpdated = await tx.workflowRun.updateMany({
-        where: { id: runId, tenantId: ctx.orgId, status: "failed" },
-        data: { status: "queued", failureReason: null, completedAt: null },
-      });
-      if (runUpdated.count !== 1) return { kind: "conflict" as const };
-      const stepUpdated = await tx.workflowStep.updateMany({
-        where: { id: step.id, tenantId: ctx.orgId, runId, status: "failed" },
-        data: { status: "pending", failureReason: null, completedAt: null },
-      });
-      if (stepUpdated.count !== 1) throw new Error("失败步骤状态已变化，无法重试");
-
-      await recordStatusEvent(
-        {
-          tenantId: ctx.orgId,
-          entityType: WORKFLOW_RUN_STATUS.entityType,
-          entityId: runId,
-          fromValue: "failed",
-          toValue: "queued",
-          actorType: "user",
-          actorId: ctx.userId ?? null,
-          reason: "手动重试工作流",
-        },
-        tx,
-      );
-      await recordStepTransition(tx, {
-        tenantId: ctx.orgId,
-        stepId: step.id,
-        from: "failed",
-        to: "pending",
-        actorId: ctx.userId ?? null,
-        reason: "手动重试工作流",
-      });
-      return { kind: "reset" as const, stepKey: step.stepKey };
+  async findRetrySource(ctx: TenantCtx, runId: string) {
+    return prisma.workflowRun.findFirst({
+      where: { id: runId, tenantId: ctx.orgId },
+      select: { workflowKey: true },
     });
+  },
+
+  /**
+   * 为失败运行创建新的完整运行。旧运行保持 failed，唯一 retry_of_run_id 保证重复请求幂等。
+   */
+  async createRetryRun(input: {
+    ctx: TenantCtx;
+    runId: string;
+    safeStepKeys: readonly string[];
+    steps: readonly string[];
+  }) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const source = await tx.workflowRun.findFirst({
+          where: { id: input.runId, tenantId: input.ctx.orgId },
+          include: { retriedBy: true },
+        });
+        if (!source) return { kind: "not_found" as const };
+        if (source.status !== "failed") return { kind: "not_failed" as const };
+        if (source.retriedBy) {
+          return { kind: "created" as const, run: source.retriedBy, reused: true };
+        }
+
+        const failedStep = await tx.workflowStep.findFirst({
+          where: { tenantId: input.ctx.orgId, runId: input.runId, status: "failed" },
+          orderBy: { stepOrder: "asc" },
+          select: { stepKey: true },
+        });
+        if (!failedStep || !input.safeStepKeys.includes(failedStep.stepKey)) {
+          return { kind: "unsafe_step" as const };
+        }
+
+        if (source.subjectType && source.subjectId) {
+          const active = await tx.workflowRun.findFirst({
+            where: {
+              tenantId: input.ctx.orgId,
+              workflowKey: source.workflowKey,
+              subjectType: source.subjectType,
+              subjectId: source.subjectId,
+              status: { in: [...ACTIVE_RUN_STATUSES] },
+            },
+            select: { id: true },
+          });
+          if (active) return { kind: "active_conflict" as const };
+        }
+
+        const run = await tx.workflowRun.create({
+          data: {
+            tenantId: input.ctx.orgId,
+            workflowKey: source.workflowKey,
+            status: "queued",
+            subjectType: source.subjectType,
+            subjectId: source.subjectId,
+            input: source.input as Prisma.InputJsonValue,
+            retryOfRunId: source.id,
+            createdBy: input.ctx.userId ?? null,
+          },
+        });
+        await tx.workflowStep.createMany({
+          data: input.steps.map((stepKey, stepOrder) => ({
+            tenantId: input.ctx.orgId,
+            runId: run.id,
+            stepKey,
+            stepOrder,
+            status: "pending",
+          })),
+        });
+        await recordStatusEvent(
+          {
+            tenantId: input.ctx.orgId,
+            entityType: WORKFLOW_RUN_STATUS.entityType,
+            entityId: run.id,
+            fromValue: null,
+            toValue: "queued",
+            actorType: "user",
+            actorId: input.ctx.userId ?? null,
+            reason: "手动重试工作流",
+            metadata: { retry_of_run_id: source.id, failed_step_key: failedStep.stepKey },
+          },
+          tx,
+        );
+        return { kind: "created" as const, run, reused: false };
+      });
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "P2002"
+      ) {
+        const existing = await prisma.workflowRun.findFirst({
+          where: { tenantId: input.ctx.orgId, retryOfRunId: input.runId },
+        });
+        if (existing) return { kind: "created" as const, run: existing, reused: true };
+      }
+      throw error;
+    }
   },
 
   /** 审批通过时原子恢复运行并完成等待步骤。 */
