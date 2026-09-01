@@ -10,6 +10,12 @@ import { REPORT_STATUS } from "@/shared/constants/status";
 import type { ReportDto } from "@/shared/schemas/content-analytics";
 import type { ApiPagination } from "@/lib/api";
 
+const REPORT_KIND_LABELS: Record<string, string> = {
+  campaign_retro: "Campaign 复盘",
+  executive: "高管摘要",
+  custom: "自定义报告",
+};
+
 export function ReportList({
   reports,
   isLoading,
@@ -40,7 +46,9 @@ export function ReportList({
         cell: ({ row }) => (
           <div>
             <div className="font-medium">{row.original.title}</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">{row.original.kind}</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              V{row.original.version} · {REPORT_KIND_LABELS[row.original.kind] ?? row.original.kind}
+            </div>
           </div>
         ),
       },

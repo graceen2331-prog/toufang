@@ -99,6 +99,7 @@ describe("报告状态机", () => {
     expect(canTransition(REPORT_STATUS, "in_review", "approved")).toBe(true);
     expect(canTransition(REPORT_STATUS, "approved", "exported")).toBe(true);
     expect(canTransition(REPORT_STATUS, "draft", "exported")).toBe(false);
+    expect(canTransition(REPORT_STATUS, "approved", "draft")).toBe(false);
   });
 });
 

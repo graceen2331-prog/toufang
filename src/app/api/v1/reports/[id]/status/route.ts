@@ -12,6 +12,7 @@ export const POST = createApiHandler({
       ctx.params.id!,
       ctx.body.to,
       ctx.body.reason,
+      ctx.body.expected_lock_version,
     );
     ctx.setAuditEntity("report", report.id, { to: ctx.body.to });
     return report;

@@ -60,15 +60,26 @@ test.describe("W7 内容审核与数据分析", () => {
     await expect(page.getByText(/缓解措施：|建议负责人：/).first()).toBeVisible();
   });
 
-  test("已导出报告保持只读，不能事后修改", async ({ page }) => {
+  test("已导出报告保持只读，并可派生新版本", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto("/reports?status=exported");
 
     await expect(page.getByText("已导出").first()).toBeVisible({ timeout: 15_000 });
     await expect(
-      page.getByText("这是已冻结的正式报告。如需调整，请重新生成报告并完成审批。"),
+      page.getByText("这是已冻结的正式报告。如需调整，请基于此版本创建修订草稿并重新审批。"),
     ).toBeVisible();
     await expect(page.getByLabel("标题")).toBeDisabled();
     await expect(page.getByRole("button", { name: "保存" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "创建 JSON 导出快照" })).toBeVisible();
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "创建 JSON 导出快照" }).click();
+    await download;
+    await expect(page.getByText("正式 JSON 快照已生成并记录")).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole("button", { name: "基于此版本创建修订草稿" }).click();
+    await expect(page.getByText(/已创建 V\d+ 修订草稿/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel("标题")).toBeEnabled();
+    await expect(page.getByRole("button", { name: "提交审批" })).toBeVisible();
   });
 });

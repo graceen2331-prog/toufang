@@ -2,7 +2,6 @@ import "server-only";
 import { ApiError, type Pagination } from "@/server/api/envelope";
 import { paginate } from "@/server/api/pagination";
 import { startWorkflow } from "@/server/workflows/engine";
-import { checkpointRepository } from "@/server/modules/checkpoint/checkpoint.repository";
 import type { TenantCtx } from "@/server/modules/brand/brand.repository";
 import { REPORT_STATUS, assertTransition } from "@/shared/constants/status";
 import type { StartWorkflowResponseDto } from "@/shared/schemas/workflow";
@@ -12,7 +11,7 @@ import type {
   Insight,
   PerformanceMetric,
   Prisma,
-  Report,
+  ReportExport,
   WorkflowRun,
 } from "@/generated/prisma/client";
 import type {
@@ -21,6 +20,8 @@ import type {
   MetricDto,
   MetricUpsertInput,
   ReportDto,
+  ReportExportDto,
+  ReportExportResultDto,
 } from "@/shared/schemas/content-analytics";
 import {
   analyticsRepository,
@@ -28,6 +29,7 @@ import {
   type InsightListParams,
   type MetricWithLabel,
   type ReportListParams,
+  type ReportWithRelations,
 } from "./analytics.repository";
 
 const METRIC_KEYS = [
@@ -107,9 +109,30 @@ function insightToDto(insight: Insight): InsightDto {
   };
 }
 
-function reportToDto(report: Report): ReportDto {
+function reportExportToDto(record: ReportExport): ReportExportDto {
+  return {
+    id: record.id,
+    report_id: record.reportId,
+    report_version: record.reportVersion,
+    format: "json_snapshot",
+    recipient: record.recipient,
+    purpose: record.purpose,
+    snapshot: record.snapshot as Record<string, unknown>,
+    snapshot_hash: record.snapshotHash,
+    hash_algorithm: record.hashAlgorithm,
+    created_by: record.createdBy,
+    created_at: record.createdAt.toISOString(),
+  };
+}
+
+function reportToDto(report: ReportWithRelations): ReportDto {
   return {
     id: report.id,
+    series_id: report.seriesId,
+    version: report.version,
+    supersedes_id: report.supersedesId,
+    superseded_by_id: report.supersededBy?.id ?? null,
+    lock_version: report.lockVersion,
     campaign_id: report.campaignId,
     title: report.title,
     kind: report.kind,
@@ -117,6 +140,10 @@ function reportToDto(report: Report): ReportDto {
     content: (report.content as Record<string, unknown>) ?? {},
     approved_at: report.approvedAt?.toISOString() ?? null,
     approved_by: report.approvedBy,
+    approved_snapshot_hash: report.approvedSnapshotHash,
+    hash_algorithm: report.hashAlgorithm,
+    derivation_reason: report.derivationReason,
+    exports: report.exports.map(reportExportToDto),
     ai_generated: report.aiGenerated,
     model: report.model,
     prompt_key: report.promptKey,
@@ -320,7 +347,11 @@ export async function getReport(ctx: TenantCtx, id: string): Promise<ReportDto> 
 export async function updateReport(
   ctx: TenantCtx,
   id: string,
-  input: { title?: string; content?: Record<string, unknown> },
+  input: {
+    title?: string;
+    content?: Record<string, unknown>;
+    expected_lock_version: number;
+  },
 ): Promise<ReportDto> {
   const current = await analyticsRepository.findReport(ctx, id);
   if (!current) throw new ApiError("RESOURCE_NOT_FOUND", "报告不存在");
@@ -332,11 +363,13 @@ export async function updateReport(
         : "正式报告已冻结，不可直接修改；请重新生成报告并完成审批",
     );
   }
-  const report = await analyticsRepository.updateReport(ctx, id, {
+  const report = await analyticsRepository.updateDraftReport(ctx, id, input.expected_lock_version, {
     ...(input.title ? { title: input.title } : {}),
     ...(input.content ? { content: input.content as Prisma.InputJsonValue } : {}),
   });
-  if (!report) throw new ApiError("RESOURCE_NOT_FOUND", "报告不存在");
+  if (!report) {
+    throw new ApiError("CONFLICT", "报告已被他人修改或已进入审批，请刷新后重试");
+  }
   return reportToDto(report);
 }
 
@@ -345,6 +378,7 @@ export async function transitionReportStatus(
   id: string,
   to: string,
   reason?: string | null,
+  expectedLockVersion?: number,
 ): Promise<ReportDto> {
   const report = await analyticsRepository.findReport(ctx, id);
   if (!report) throw new ApiError("RESOURCE_NOT_FOUND", "报告不存在");
@@ -355,58 +389,77 @@ export async function transitionReportStatus(
   if (report.status === "in_review" && to === "approved") {
     throw new ApiError("CONFLICT", "请在审批中心批准报告，不能绕过审批门");
   }
+  if (to === "in_review") {
+    if (expectedLockVersion === undefined) {
+      throw new ApiError("VALIDATION_FAILED", "提交审批前请刷新报告版本");
+    }
+    const submitted = await analyticsRepository.submitReportForReview(
+      ctx,
+      id,
+      expectedLockVersion,
+    );
+    if (submitted.kind === "not_found") throw new ApiError("RESOURCE_NOT_FOUND", "报告不存在");
+    if (submitted.kind === "not_draft") {
+      throw new ApiError("CONFLICT", "报告已进入审批或正式状态");
+    }
+    if (submitted.kind === "lock_conflict") {
+      throw new ApiError("CONFLICT", "报告已被他人修改，请刷新后再提交审批");
+    }
+    return reportToDto(submitted.report);
+  }
   const extra: Record<string, unknown> = {};
   if (to === "approved") {
     extra.approvedAt = new Date();
     extra.approvedBy = ctx.userId ?? null;
   }
-  await analyticsRepository.transitionReport(ctx, id, report.status, to, reason ?? null, extra);
-  if (to === "in_review") {
-    await checkpointRepository.create(ctx, {
-      type: "report",
-      status: "pending",
-      title: `报告审批：${report.title}`,
-      summary: String(
-        (report.content as { executive_summary?: string })?.executive_summary ?? "",
-      ).slice(0, 200),
-      entityType: "report",
-      entityId: id,
-      payload: { report_id: id, title: report.title, content: report.content as object },
-      priority: "high",
-      assigneeRole: "manager",
-    });
+  const transitioned = await analyticsRepository.transitionReport(
+    ctx,
+    id,
+    report.status,
+    to,
+    reason ?? null,
+    extra,
+  );
+  if (!transitioned) {
+    throw new ApiError("CONFLICT", "报告状态已变化，请刷新后重试");
   }
   return getReport(ctx, id);
 }
 
-export async function onReportApprovalDecided(
+export async function decideReportCheckpoint(
   ctx: TenantCtx,
+  checkpointId: string,
   reportId: string,
   decision: "approved" | "rejected" | "changes_requested",
+  reason: string | null,
 ): Promise<void> {
-  const report = await analyticsRepository.findReport(ctx, reportId);
-  if (!report || report.status !== "in_review") return;
-  if (decision === "approved") {
-    await analyticsRepository.transitionReport(
-      ctx,
-      reportId,
-      "in_review",
-      "approved",
-      "报告审批通过",
-      {
-        approvedAt: new Date(),
-        approvedBy: ctx.userId ?? null,
-      },
-    );
-  } else {
-    await analyticsRepository.transitionReport(
-      ctx,
-      reportId,
-      "in_review",
-      "draft",
-      "报告审批退回修改",
-    );
+  const result = await analyticsRepository.decideReportCheckpoint({
+    ctx,
+    checkpointId,
+    reportId,
+    decision,
+    reason,
+  });
+  if (result.kind === "not_pending") throw new ApiError("APPROVAL_ALREADY_DECIDED");
+  if (result.kind === "report_conflict") {
+    throw new ApiError("CONFLICT", "报告状态已变化，审批未提交");
   }
+  if (result.kind === "integrity_mismatch") {
+    throw new ApiError("CONFLICT", "报告内容与提交审批时不一致，审批已中止");
+  }
+}
+
+export async function deriveReportDraft(
+  ctx: TenantCtx,
+  reportId: string,
+  reason: string,
+): Promise<ReportDto> {
+  const result = await analyticsRepository.deriveReportDraft(ctx, reportId, reason);
+  if (result.kind === "not_found") throw new ApiError("RESOURCE_NOT_FOUND", "报告不存在");
+  if (result.kind === "not_formal") {
+    throw new ApiError("CONFLICT", "只有已批准或已导出的正式版本可以创建修订草稿");
+  }
+  return getReport(ctx, result.report.id);
 }
 
 export async function createAnalyticsOutputsFromWorkflow(
@@ -475,6 +528,35 @@ export async function createAnalyticsOutputsFromWorkflow(
   return { report_id: created.id, insight_count: insightCount };
 }
 
-export async function exportReport(ctx: TenantCtx, id: string): Promise<ReportDto> {
-  return transitionReportStatus(ctx, id, "exported", "报告导出");
+export async function exportReport(
+  ctx: TenantCtx,
+  id: string,
+  input: {
+    format: "json_snapshot";
+    recipient: string;
+    purpose?: string | null;
+    idempotency_key: string;
+  },
+): Promise<ReportExportResultDto> {
+  const result = await analyticsRepository.createReportExport({
+    ctx,
+    reportId: id,
+    format: input.format,
+    recipient: input.recipient,
+    purpose: input.purpose ?? null,
+    idempotencyKey: input.idempotency_key,
+  });
+  if (result.kind === "not_exportable") {
+    throw new ApiError("CONFLICT", "只有已批准或已导出的正式报告可以创建导出快照");
+  }
+  if (result.kind === "integrity_mismatch") {
+    throw new ApiError("CONFLICT", "正式报告完整性校验失败，已阻止导出");
+  }
+  if (result.kind === "idempotency_conflict") {
+    throw new ApiError("IDEMPOTENCY_CONFLICT", "该导出幂等键已用于其他报告");
+  }
+  return {
+    report: reportToDto(result.report),
+    export: reportExportToDto(result.exportRecord),
+  };
 }

@@ -58,6 +58,23 @@ export async function decideCheckpoint(
     throw new ApiError("VALIDATION_FAILED", "驳回或要求修改时必须填写原因");
   }
 
+  // 正式报告必须把 checkpoint 决策与报告状态/快照哈希写入同一事务。
+  if (checkpoint.type === "report" && checkpoint.entityType === "report" && checkpoint.entityId) {
+    const { decideReportCheckpoint } = await import(
+      "@/server/modules/analytics/analytics.service"
+    );
+    await decideReportCheckpoint(
+      ctx,
+      checkpoint.id,
+      checkpoint.entityId,
+      decision,
+      reason?.trim() || null,
+    );
+    const updated = await checkpointRepository.findById(ctx, id);
+    const names = await getUserNames(updated?.decidedBy ? [updated.decidedBy] : []);
+    return toDto(updated!, names);
+  }
+
   const decided = await checkpointRepository.decide(ctx, id, decision, reason?.trim() || null);
   if (!decided) throw new ApiError("APPROVAL_ALREADY_DECIDED");
 
@@ -104,11 +121,6 @@ export async function decideCheckpoint(
   if (checkpoint.type === "content" && checkpoint.entityType === "content_asset" && checkpoint.entityId) {
     const { onContentReviewDecided } = await import("@/server/modules/content/content.service");
     await onContentReviewDecided(ctx, checkpoint.entityId, decision);
-  }
-
-  if (checkpoint.type === "report" && checkpoint.entityType === "report" && checkpoint.entityId) {
-    const { onReportApprovalDecided } = await import("@/server/modules/analytics/analytics.service");
-    await onReportApprovalDecided(ctx, checkpoint.entityId, decision);
   }
 
   const updated = await checkpointRepository.findById(ctx, id);

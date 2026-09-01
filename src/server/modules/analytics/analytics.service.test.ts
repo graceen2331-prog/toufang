@@ -12,7 +12,7 @@ vi.mock("./analytics.repository", () => ({
     listInsights: vi.fn(),
     listReports: vi.fn(),
     findReport: findReportMock,
-    updateReport: updateReportMock,
+    updateDraftReport: updateReportMock,
     transitionReport: vi.fn(),
     createInsight: vi.fn(),
     createReport: vi.fn(),
@@ -106,7 +106,11 @@ describe("analytics 正式报告保护", () => {
     const { updateReport } = await import("./analytics.service");
 
     await expect(
-      updateReport({ orgId: "org-1", userId: "user-1" }, "report-1", { title: "篡改后的标题" }),
+      updateReport(
+        { orgId: "org-1", userId: "user-1" },
+        "report-1",
+        { title: "篡改后的标题", expected_lock_version: 0 },
+      ),
     ).rejects.toMatchObject({ code: "CONFLICT" });
     expect(updateReportMock).not.toHaveBeenCalled();
   });
@@ -115,6 +119,10 @@ describe("analytics 正式报告保护", () => {
     const report = {
       id: "report-1",
       tenantId: "org-1",
+      seriesId: "report-1",
+      version: 1,
+      supersedesId: null,
+      lockVersion: 0,
       campaignId: null,
       title: "草稿报告",
       kind: "campaign_retro",
@@ -122,6 +130,10 @@ describe("analytics 正式报告保护", () => {
       content: {},
       approvedAt: null,
       approvedBy: null,
+      submittedSnapshotHash: null,
+      approvedSnapshotHash: null,
+      hashAlgorithm: null,
+      derivationReason: null,
       aiGenerated: false,
       agentRunId: null,
       promptKey: null,
@@ -132,6 +144,8 @@ describe("analytics 正式报告保护", () => {
       createdBy: "user-1",
       updatedBy: null,
       deletedAt: null,
+      supersededBy: null,
+      exports: [],
     };
     findReportMock.mockResolvedValue(report);
     updateReportMock.mockResolvedValue({ ...report, title: "更新后的草稿" });
@@ -139,6 +153,7 @@ describe("analytics 正式报告保护", () => {
 
     const updated = await updateReport({ orgId: "org-1", userId: "user-1" }, "report-1", {
       title: "更新后的草稿",
+      expected_lock_version: 0,
     });
 
     expect(updated.title).toBe("更新后的草稿");

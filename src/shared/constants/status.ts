@@ -340,7 +340,7 @@ export const REPORT_STATUS: StateMachine = {
     generating: ["draft", "in_review"],
     draft: ["in_review"],
     in_review: ["approved", "draft"],
-    approved: ["exported", "draft"],
+    approved: ["exported"],
     exported: [],
   },
 };

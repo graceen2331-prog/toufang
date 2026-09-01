@@ -31,6 +31,7 @@ const findById = vi.fn();
 const decide = vi.fn();
 const getUserNames = vi.fn();
 const onOutreachApprovalDecided = vi.fn();
+const decideReportCheckpoint = vi.fn();
 
 vi.mock("./checkpoint.repository", () => ({
   checkpointRepository: {
@@ -45,6 +46,10 @@ vi.mock("@/server/modules/user/user.repository", () => ({
 
 vi.mock("@/server/modules/outreach/outreach.service", () => ({
   onOutreachApprovalDecided,
+}));
+
+vi.mock("@/server/modules/analytics/analytics.service", () => ({
+  decideReportCheckpoint,
 }));
 
 describe("decideCheckpoint 外联审批联动", () => {
@@ -65,5 +70,38 @@ describe("decideCheckpoint 外联审批联动", () => {
       "message-1",
       "approved",
     );
+  });
+});
+
+describe("decideCheckpoint 正式报告原子审批", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const reportCheckpoint = {
+      ...pendingCheckpoint,
+      type: "report",
+      entityType: "report",
+      entityId: "report-1",
+      title: "报告审批",
+    };
+    findById
+      .mockResolvedValueOnce(reportCheckpoint)
+      .mockResolvedValueOnce({ ...reportCheckpoint, status: "approved", decidedBy: "user-1" });
+    decideReportCheckpoint.mockResolvedValue(undefined);
+    getUserNames.mockResolvedValue(new Map([["user-1", "林星澜"]]));
+  });
+
+  it("交由报告领域事务同时决定审批与报告状态", async () => {
+    const { decideCheckpoint } = await import("./checkpoint.service");
+
+    await decideCheckpoint({ orgId: "org-1", userId: "user-1" }, "checkpoint-1", "approved");
+
+    expect(decideReportCheckpoint).toHaveBeenCalledWith(
+      { orgId: "org-1", userId: "user-1" },
+      "checkpoint-1",
+      "report-1",
+      "approved",
+      null,
+    );
+    expect(decide).not.toHaveBeenCalled();
   });
 });

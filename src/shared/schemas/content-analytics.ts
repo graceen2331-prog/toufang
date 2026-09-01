@@ -55,11 +55,24 @@ export const InsightStatusSchema = z.object({
 export const ReportUpdateSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   content: z.record(z.string(), z.unknown()).optional(),
+  expected_lock_version: z.number().int().min(0),
 });
 
 export const ReportStatusSchema = z.object({
   to: z.string().min(1),
   reason: z.string().max(500).nullish(),
+  expected_lock_version: z.number().int().min(0).optional(),
+});
+
+export const ReportDeriveSchema = z.object({
+  reason: z.string().trim().min(1, "请说明修订原因").max(500),
+});
+
+export const ReportExportSchema = z.object({
+  format: z.literal("json_snapshot").default("json_snapshot"),
+  recipient: z.string().trim().min(1).max(200).default("内部存档"),
+  purpose: z.string().trim().max(500).nullish(),
+  idempotency_key: z.string().min(1).max(100),
 });
 
 export interface ContentReviewFindingDto {
@@ -162,6 +175,11 @@ export interface InsightDto {
 
 export interface ReportDto {
   id: string;
+  series_id: string;
+  version: number;
+  supersedes_id: string | null;
+  superseded_by_id: string | null;
+  lock_version: number;
   campaign_id: string | null;
   title: string;
   kind: string;
@@ -169,10 +187,33 @@ export interface ReportDto {
   content: Record<string, unknown>;
   approved_at: string | null;
   approved_by: string | null;
+  approved_snapshot_hash: string | null;
+  hash_algorithm: string | null;
+  derivation_reason: string | null;
+  exports: ReportExportDto[];
   ai_generated: boolean;
   model: string | null;
   prompt_key: string | null;
   prompt_version: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ReportExportDto {
+  id: string;
+  report_id: string;
+  report_version: number;
+  format: "json_snapshot";
+  recipient: string;
+  purpose: string | null;
+  snapshot: Record<string, unknown>;
+  snapshot_hash: string;
+  hash_algorithm: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface ReportExportResultDto {
+  report: ReportDto;
+  export: ReportExportDto;
 }

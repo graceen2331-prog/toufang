@@ -845,6 +845,10 @@ model Insight {
 model Report {
   id            String    @id @default(uuid(7))
   tenantId      String    @map("tenant_id")
+  seriesId      String    @map("series_id")
+  version       Int       @default(1)
+  supersedesId  String?   @unique @map("supersedes_id")
+  lockVersion   Int       @default(0) @map("lock_version")
   campaignId    String?   @map("campaign_id")
   title         String
   kind          String    @default("campaign_retro") // campaign_retro | executive | custom
@@ -852,6 +856,10 @@ model Report {
   content       Json      @default("{}") // 结构化报告块
   approvedAt    DateTime? @map("approved_at")
   approvedBy    String?   @map("approved_by")
+  submittedSnapshotHash String? @map("submitted_snapshot_hash")
+  approvedSnapshotHash  String? @map("approved_snapshot_hash")
+  hashAlgorithm String?  @map("hash_algorithm")
+  derivationReason String? @map("derivation_reason")
   // AI 溯源
   aiGenerated   Boolean   @default(true) @map("ai_generated")
   agentRunId    String?   @map("agent_run_id")
@@ -864,9 +872,36 @@ model Report {
   updatedBy     String?   @map("updated_by")
   deletedAt     DateTime? @map("deleted_at")
 
+  supersedes   Report?       @relation("ReportRevision", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy Report?       @relation("ReportRevision")
+  exports      ReportExport[]
+
+  @@unique([tenantId, seriesId, version])
   @@index([tenantId])
   @@index([campaignId])
   @@map("reports")
+}
+
+model ReportExport {
+  id             String   @id @default(uuid(7))
+  tenantId       String   @map("tenant_id")
+  reportId       String   @map("report_id")
+  reportVersion  Int      @map("report_version")
+  format         String   @default("json_snapshot")
+  recipient      String
+  purpose        String?
+  snapshot       Json
+  snapshotHash   String   @map("snapshot_hash")
+  hashAlgorithm  String   @map("hash_algorithm")
+  idempotencyKey String   @map("idempotency_key")
+  createdBy      String?  @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, reportId, createdAt])
+  @@map("report_exports")
 }
 
 // ============================================================

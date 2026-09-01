@@ -95,7 +95,7 @@ function ReportsPageInner() {
             onPrev: pagination.prev,
           }}
         />
-        <ReportEditor report={selectedReport} />
+        <ReportEditor report={selectedReport} onSelectReport={setExplicitSelectedId} />
       </div>
     </div>
   );

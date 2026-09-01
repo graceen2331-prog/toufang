@@ -10,6 +10,7 @@ import type {
   MetricDto,
   MetricUpsertInput,
   ReportDto,
+  ReportExportResultDto,
 } from "@/shared/schemas/content-analytics";
 
 export interface AnalyticsFilters {
@@ -114,8 +115,16 @@ export function useUpsertMetric() {
 export function useTransitionReport() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, to, reason }: { id: string; to: string; reason?: string | null }) =>
-      apiFetch<ReportDto>(`/reports/${id}/status`, { method: "POST", body: { to, reason } }),
+    mutationFn: ({ id, to, reason, expected_lock_version }: {
+      id: string;
+      to: string;
+      reason?: string | null;
+      expected_lock_version?: number;
+    }) =>
+      apiFetch<ReportDto>(`/reports/${id}/status`, {
+        method: "POST",
+        body: { to, reason, expected_lock_version },
+      }),
     onSuccess: (report) => {
       toast.success("报告状态已更新");
       void queryClient.invalidateQueries({ queryKey: analyticsKeys.reportsAll });
@@ -128,8 +137,16 @@ export function useTransitionReport() {
 export function useUpdateReport() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, title, content }: { id: string; title?: string; content?: Record<string, unknown> }) =>
-      apiFetch<ReportDto>(`/reports/${id}`, { method: "PATCH", body: { title, content } }),
+    mutationFn: ({ id, title, content, expected_lock_version }: {
+      id: string;
+      title?: string;
+      content?: Record<string, unknown>;
+      expected_lock_version: number;
+    }) =>
+      apiFetch<ReportDto>(`/reports/${id}`, {
+        method: "PATCH",
+        body: { title, content, expected_lock_version },
+      }),
     onSuccess: (report) => {
       toast.success("报告已保存");
       void queryClient.invalidateQueries({ queryKey: analyticsKeys.reportsAll });
@@ -142,11 +159,46 @@ export function useUpdateReport() {
 export function useExportReport() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiFetch<ReportDto>(`/reports/${id}/export`, { method: "POST" }),
-    onSuccess: (report) => {
-      toast.success("报告已标记导出");
+    mutationFn: ({ id, recipient, purpose }: { id: string; recipient: string; purpose?: string | null }) =>
+      apiFetch<ReportExportResultDto>(`/reports/${id}/export`, {
+        method: "POST",
+        body: {
+          format: "json_snapshot",
+          recipient,
+          purpose,
+          idempotency_key: crypto.randomUUID(),
+        },
+      }),
+    onSuccess: (result) => {
+      const blob = new Blob([JSON.stringify(result.export.snapshot, null, 2)], {
+        type: "application/json;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `report-v${result.report.version}-${result.export.snapshot_hash.slice(0, 8)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("正式 JSON 快照已生成并记录");
       void queryClient.invalidateQueries({ queryKey: analyticsKeys.reportsAll });
-      void queryClient.invalidateQueries({ queryKey: analyticsKeys.report(report.id) });
+      void queryClient.invalidateQueries({ queryKey: analyticsKeys.report(result.report.id) });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useDeriveReportDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiFetch<ReportDto>(`/reports/${id}/derive-draft`, {
+        method: "POST",
+        body: { reason },
+      }),
+    onSuccess: (report) => {
+      toast.success(`已创建 V${report.version} 修订草稿`);
+      void queryClient.invalidateQueries({ queryKey: analyticsKeys.reportsAll });
+      void queryClient.setQueryData(analyticsKeys.report(report.id), report);
     },
     onError: (err) => toast.error(err.message),
   });

@@ -235,9 +235,12 @@ export async function seedContentAnalytics(
     where: { tenantId, campaignId: campaign.id, title: "焕亮维C精华阶段复盘草稿", deletedAt: null },
   });
   if (!report) {
+    const reportId = crypto.randomUUID();
     await prisma.report.create({
       data: {
+        id: reportId,
         tenantId,
+        seriesId: reportId,
         campaignId: campaign.id,
         title: "焕亮维C精华阶段复盘草稿",
         kind: "campaign_retro",

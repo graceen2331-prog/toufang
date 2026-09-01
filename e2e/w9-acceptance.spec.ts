@@ -260,8 +260,8 @@ async function generateApproveAndExportReport(page: Page, campaignName: string) 
   await expect(reportRow).toBeVisible({ timeout: 30_000 });
   await reportRow.click();
   await expect(page.getByText("高管摘要")).toBeVisible();
-  await page.getByRole("button", { name: "导出" }).click();
-  await expect(page.getByText("报告已标记导出")).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "创建 JSON 导出快照" }).click();
+  await expect(page.getByText("正式 JSON 快照已生成并记录")).toBeVisible({ timeout: 10_000 });
 }
 
 async function assertViewerDenied(browser: Browser) {
