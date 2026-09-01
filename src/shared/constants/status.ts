@@ -391,7 +391,7 @@ export const PAYMENT_STATUS: StateMachine = {
   },
   transitions: {
     not_started: ["pending_approval", "cancelled"],
-    pending_approval: ["approved", "cancelled"],
+    pending_approval: ["approved", "not_started", "cancelled"],
     approved: ["scheduled", "paid", "cancelled"],
     scheduled: ["paid", "failed", "cancelled"],
     paid: ["disputed"],

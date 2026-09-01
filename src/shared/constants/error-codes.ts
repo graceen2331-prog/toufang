@@ -27,6 +27,16 @@ export const ERROR_CODES = {
   CONTENT_BLOCKING_FINDINGS: { status: 409, message: "内容命中必须修改的确定性规则" },
   CONTENT_OVERRIDE_REQUIRED: { status: 422, message: "批准高风险内容必须填写覆盖说明" },
   CONTENT_APPROVAL_EVIDENCE_INVALID: { status: 409, message: "内容审批证据无效" },
+  CONTRACT_NOT_PAYABLE: { status: 409, message: "当前合同不可申请付款" },
+  PAYMENT_LIMIT_EXCEEDED: { status: 409, message: "付款金额超过合同剩余可付额度" },
+  PAYMENT_REQUEST_KEY_REUSED: { status: 409, message: "付款请求幂等键已用于不同内容" },
+  PAYMENT_DUPLICATE: { status: 409, message: "检测到重复付款申请" },
+  PAYMENT_STATUS_CONFLICT: { status: 409, message: "付款状态已变化，请刷新后重试" },
+  PAYMENT_APPROVAL_SNAPSHOT_MISMATCH: { status: 409, message: "付款审批快照已变化" },
+  PAYMENT_APPROVED_CHECKPOINT_REQUIRED: { status: 409, message: "缺少有效的付款批准记录" },
+  PAYMENT_RECONCILIATION_REQUIRED: { status: 422, message: "登记已付款必须填写对账证据" },
+  RECONCILIATION_REFERENCE_DUPLICATE: { status: 409, message: "该对账流水已登记" },
+  PAYMENT_SELF_APPROVAL_FORBIDDEN: { status: 403, message: "付款申请人不能审批自己的申请" },
 
   // AI
   AI_BUDGET_EXCEEDED: { status: 429, message: "本月 AI 预算已用尽" },

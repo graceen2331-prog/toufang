@@ -1,6 +1,7 @@
 import { createApiHandler } from "@/server/api/handler";
 import { decideCheckpoint } from "@/server/modules/checkpoint/checkpoint.service";
 import { CheckpointDecisionSchema } from "@/shared/schemas/checkpoint";
+import { roleHasPermission } from "@/shared/constants/permissions";
 
 export const POST = createApiHandler({
   permission: "approval:decide",
@@ -13,6 +14,8 @@ export const POST = createApiHandler({
       ctx.body.decision,
       ctx.body.reason,
       ctx.body.override,
+      ctx.body.payment_confirmation,
+      roleHasPermission(ctx.auth.permissions, "payment:approve"),
     );
     ctx.setAuditEntity("human_checkpoint", checkpoint.id, {
       decision: ctx.body.decision,

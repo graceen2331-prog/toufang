@@ -29,6 +29,7 @@ export const PERMISSIONS = {
   "payment:read": "查看付款",
   "payment:write": "管理付款",
   "payment:approve": "审批付款",
+  "payment:reconcile": "登记付款与对账",
   // 分析与报告
   "analytics:read": "查看分析",
   "analytics:write": "录入分析指标",
@@ -144,6 +145,7 @@ export const SYSTEM_ROLES: Record<string, { name: string; permissions: Permissio
       "payment:read",
       "payment:write",
       "payment:approve",
+      "payment:reconcile",
       "analytics:read",
       "report:read",
       "report:export",

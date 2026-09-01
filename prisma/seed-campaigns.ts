@@ -1,5 +1,6 @@
 // Seed v3：演示 Campaign（含达人管道 / 任务 / 预算 / 状态历史 / 审批项）
 import type { PrismaClient } from "../src/generated/prisma/client";
+import { createPayment, transitionPaymentStatus } from "../src/server/modules/contract/contract.service";
 
 export async function seedCampaigns(
   prisma: PrismaClient,
@@ -376,47 +377,53 @@ async function seedOutreachContracts(
       }
 
       if (cc.status === "active") {
-        let payment = await prisma.paymentRecord.findFirst({
+        const payment = await prisma.paymentRecord.findFirst({
           where: { tenantId, contractId: contract.id, deletedAt: null },
         });
         if (!payment) {
-          payment = await prisma.paymentRecord.create({
-            data: {
-              tenantId,
-              contractId: contract.id,
-              status: "pending_approval",
-              amountCents: Math.round(contract.amountCents * 0.5),
-              currency: contract.currency,
+          const createdPayment = await createPayment(
+            { orgId: tenantId, userId: createdBy },
+            contract.id,
+            {
+              request_key: crypto.randomUUID(),
+              amount_cents: Math.round(contract.amountCents * 0.5),
+              currency: "CNY",
               method: "bank",
-              invoice: { text: "首付款，待财务审批" },
-              createdBy,
+              milestone_key: "first_payment",
+              milestone_label: "首期付款",
+              payee: {
+                name: cc.creator.displayName,
+                bank_name: "演示银行",
+                account_number: `62220000${cc.id.replaceAll("-", "").slice(-4)}`,
+              },
+              invoice: { exception_reason: "演示数据暂无发票，需财务人工核对" },
+              notes: "首期付款，等待财务审批",
             },
-          });
+          );
+          await transitionPaymentStatus(
+            { orgId: tenantId, userId: createdBy },
+            createdPayment.id,
+            "pending_approval",
+          );
+        } else if (payment.status === "not_started" && payment.requestKey) {
+          await transitionPaymentStatus(
+            { orgId: tenantId, userId: createdBy },
+            payment.id,
+            "pending_approval",
+          );
         }
-        const paymentCheckpoint = await prisma.humanCheckpoint.findFirst({
+        const pendingPayment = await prisma.paymentRecord.findFirst({
           where: {
             tenantId,
-            entityType: "payment_record",
-            entityId: payment.id,
-            status: "pending",
+            contractId: contract.id,
+            status: "pending_approval",
+            deletedAt: null,
           },
         });
-        if (!paymentCheckpoint) {
-          await prisma.humanCheckpoint.create({
-            data: {
-              tenantId,
-              type: "payment",
-              status: "pending",
-              title: `付款审批：${cc.creator.displayName}`,
-              summary: `首付款 ¥${(payment.amountCents / 100).toLocaleString("zh-CN")}`,
-              entityType: "payment_record",
-              entityId: payment.id,
-              payload: { contract_id: contract.id, amount_cents: payment.amountCents },
-              priority: "high",
-              assigneeRole: "finance",
-              createdBy,
-            },
-          });
+        if (pendingPayment && !pendingPayment.approvalCheckpointId) {
+          console.warn(
+            `[seed] 跳过旧版付款审批项 ${pendingPayment.id}：缺少完整审批快照，请在界面重新登记`,
+          );
         }
       }
     }

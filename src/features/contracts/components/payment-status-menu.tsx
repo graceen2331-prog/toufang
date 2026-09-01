@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { StatusTag } from "@/components/shared/status-tag";
 import { useTransitionPaymentStatus } from "@/features/contracts/queries";
+import { ReconcilePaymentDialog } from "@/features/contracts/components/reconcile-payment-dialog";
 import { PAYMENT_STATUS } from "@/shared/constants/status";
 import type { PaymentDto } from "@/shared/schemas/outreach";
 
@@ -25,10 +26,14 @@ export function PaymentStatusMenu({
 }) {
   const transition = useTransitionPaymentStatus(contractId);
   const [pendingTo, setPendingTo] = useState<string | null>(null);
+  const [reconcileOpen, setReconcileOpen] = useState(false);
   const targets = (PAYMENT_STATUS.transitions[payment.status] ?? []).filter(
-    (to) => !(payment.status === "pending_approval" && to === "approved"),
+    (to) =>
+      !(payment.status === "pending_approval" && to === "approved") &&
+      to !== "paid",
   );
-  if (targets.length === 0) return null;
+  const canReconcile = ["approved", "scheduled"].includes(payment.status);
+  if (targets.length === 0 && !canReconcile) return null;
 
   return (
     <>
@@ -45,6 +50,11 @@ export function PaymentStatusMenu({
               <StatusTag source={PAYMENT_STATUS} value={to} />
             </DropdownMenuItem>
           ))}
+          {canReconcile && (
+            <DropdownMenuItem onClick={() => setReconcileOpen(true)}>
+              登记付款与对账
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <ConfirmDialog
@@ -70,6 +80,12 @@ export function PaymentStatusMenu({
             { onSuccess: () => setPendingTo(null) },
           );
         }}
+      />
+      <ReconcilePaymentDialog
+        contractId={contractId}
+        paymentId={payment.id}
+        open={reconcileOpen}
+        onOpenChange={setReconcileOpen}
       />
     </>
   );

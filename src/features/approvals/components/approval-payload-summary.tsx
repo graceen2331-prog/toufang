@@ -73,7 +73,33 @@ function buildRows(checkpoint: CheckpointDto): PayloadRow[] {
   const rows: Array<PayloadRow | null> = [];
 
   if (checkpoint.type === "payment") {
-    rows.push(centsRow("付款金额", payload.amount_cents));
+    const snapshot = nestedRecord(payload, "snapshot");
+    const contract = snapshot ? nestedRecord(snapshot, "contract") : null;
+    const milestone = snapshot ? nestedRecord(snapshot, "milestone") : null;
+    const payee = snapshot ? nestedRecord(snapshot, "payee") : null;
+    const invoice = snapshot ? nestedRecord(snapshot, "invoice") : null;
+    const reservation = snapshot ? nestedRecord(snapshot, "reservation") : null;
+    rows.push(
+      centsRow("付款金额", snapshot?.amount_cents ?? payload.amount_cents),
+      row("合同", stringValue(contract?.number)),
+      row("合同状态", stringValue(contract?.status)),
+      row("付款里程碑", stringValue(milestone?.label)),
+      row(
+        "收款账户",
+        payee
+          ? `${stringValue(payee.name) ?? "未填"} · ${stringValue(payee.bank_name) ?? "机构未填"} · 尾号${stringValue(payee.account_last4) ?? "—"}`
+          : null,
+      ),
+      row(
+        "票据依据",
+        stringValue(invoice?.number)
+          ? `发票 ${stringValue(invoice?.number)} · ${stringValue(invoice?.issuer) ?? "开票方未填"}`
+          : stringValue(invoice?.exception_reason),
+      ),
+      centsRow("已预留", reservation?.committed_cents),
+      centsRow("剩余额度", reservation?.remaining_cents),
+      row("审批快照", stringValue(payload.snapshot_hash)?.slice(0, 12)),
+    );
   } else if (checkpoint.type === "contract") {
     rows.push(row("合同编号", stringValue(payload.contract_number)), centsRow("合同金额", payload.amount_cents));
   } else if (checkpoint.type === "budget") {
@@ -118,7 +144,7 @@ function buildRows(checkpoint: CheckpointDto): PayloadRow[] {
   }
 
   const typedRows = rows.filter((item): item is PayloadRow => Boolean(item));
-  if (typedRows.length > 0) return typedRows.slice(0, 5);
+  if (typedRows.length > 0) return typedRows.slice(0, checkpoint.type === "payment" ? 9 : 5);
 
   const visibleEntries = Object.entries(payload).filter(([key]) => !key.endsWith("_id") && key !== "id");
   return visibleEntries

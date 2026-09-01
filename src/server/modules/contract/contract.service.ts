@@ -4,8 +4,15 @@ import { paginate } from "@/server/api/pagination";
 import { checkpointRepository } from "@/server/modules/checkpoint/checkpoint.repository";
 import { campaignRepository } from "@/server/modules/campaign/campaign.repository";
 import type { TenantCtx } from "@/server/modules/brand/brand.repository";
+import { decryptJson, encryptJson } from "@/server/lib/crypto";
 import { CONTRACT_STATUS, PAYMENT_STATUS, assertTransition } from "@/shared/constants/status";
-import type { ContractDto, PaymentDto } from "@/shared/schemas/outreach";
+import type {
+  ContractDto,
+  PaymentCreateInput,
+  PaymentDto,
+  PaymentReconcileInput,
+} from "@/shared/schemas/outreach";
+import type { CheckpointDecisionInput } from "@/shared/schemas/checkpoint";
 import type { PaymentRecord } from "@/generated/prisma/client";
 import {
   contractRepository,
@@ -13,6 +20,10 @@ import {
   type ContractWithRelations,
   type PaymentWithContract,
 } from "./contract.repository";
+import {
+  buildPaymentRequestIntegrity,
+  normalizePaymentEvidence,
+} from "./payment-integrity";
 
 function jsonText(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
@@ -53,6 +64,7 @@ function paymentToDto(
   contract?: ContractWithRelations,
 ): PaymentDto {
   const relatedContract = "contract" in payment ? payment.contract : contract;
+  const account = decryptJson<{ bank_name?: string }>(payment.accountInfo);
   return {
     id: payment.id,
     contract_id: payment.contractId,
@@ -66,6 +78,26 @@ function paymentToDto(
     currency: payment.currency,
     method: payment.method,
     notes: jsonText(payment.invoice),
+    version: payment.version,
+    milestone_key: payment.milestoneKey,
+    milestone_label: payment.milestoneLabel,
+    payee_name: payment.payeeNameSnapshot,
+    payee_bank_name: account?.bank_name ?? null,
+    payee_account_last4: payment.payeeAccountLast4,
+    invoice_number: payment.invoiceNumber,
+    invoice_issuer: payment.invoiceIssuer,
+    invoice_exception_reason: payment.invoiceExceptionReason,
+    approval_checkpoint_id: payment.approvalCheckpointId,
+    approval_snapshot_hash: payment.approvalSnapshotHash,
+    reconciliation_reference: payment.reconciliationReference,
+    reconciliation_evidence_present: Boolean(payment.reconciliationHash),
+    paid_by: payment.paidBy,
+    legacy_evidence_incomplete: Boolean(
+      !payment.requestKey ||
+        !payment.milestoneKey ||
+        !payment.payeeAccountFingerprint ||
+        (!payment.invoiceNumber && !payment.invoiceExceptionReason),
+    ),
     paid_at: payment.paidAt?.toISOString() ?? null,
     approved_at: payment.approvedAt?.toISOString() ?? null,
     created_at: payment.createdAt.toISOString(),
@@ -166,7 +198,7 @@ export async function transitionContractStatus(
   const extra: Record<string, unknown> = {};
   if (to === "signed") extra.signedAt = new Date();
 
-  await contractRepository.transitionContract(
+  const transitioned = await contractRepository.transitionContract(
     ctx,
     contractId,
     contract.status,
@@ -174,6 +206,7 @@ export async function transitionContractStatus(
     reason ?? null,
     extra,
   );
+  if (transitioned === false) throw new ApiError("CONFLICT", "合同状态已变化，请刷新后重试");
 
   if (to === "in_review") {
     await checkpointRepository.create(ctx, {
@@ -221,13 +254,14 @@ export async function onContractApprovalDecided(
   const contract = await contractRepository.findContract(ctx, contractId);
   if (!contract || contract.status !== "in_review") return;
   if (decision === "approved") {
-    await contractRepository.transitionContract(
+    const transitioned = await contractRepository.transitionContract(
       ctx,
       contractId,
       "in_review",
       "sent",
       "合同审批通过",
     );
+    if (transitioned === false) return;
     await campaignRepository.transitionCreatorField(
       ctx,
       contract.campaignCreatorId,
@@ -238,13 +272,14 @@ export async function onContractApprovalDecided(
       "user",
     );
   } else {
-    await contractRepository.transitionContract(
+    const transitioned = await contractRepository.transitionContract(
       ctx,
       contractId,
       "in_review",
       "draft",
       "合同审批驳回",
     );
+    if (transitioned === false) return;
     await campaignRepository.transitionCreatorField(
       ctx,
       contract.campaignCreatorId,
@@ -267,35 +302,81 @@ export async function listPayments(ctx: TenantCtx, contractId: string): Promise<
 export async function createPayment(
   ctx: TenantCtx,
   contractId: string,
-  input: {
-    amount_cents: number;
-    method?: "bank" | "alipay" | "other" | null;
-    notes?: string | null;
-  },
+  input: PaymentCreateInput,
 ): Promise<PaymentDto> {
   const contract = await contractRepository.findContract(ctx, contractId);
   if (!contract) throw new ApiError("RESOURCE_NOT_FOUND", "合同不存在");
   if (!["signed", "active"].includes(contract.status)) {
-    throw new ApiError("CONFLICT", "仅已签署或生效合同可登记付款；预付款需走单独的例外审批流程");
-  }
-  const committedTotal = contract.payments
-    .filter((payment) => !["cancelled", "failed"].includes(payment.status))
-    .reduce((sum, payment) => sum + payment.amountCents, 0);
-  const remainingCents = Math.max(0, contract.amountCents - committedTotal);
-  if (input.amount_cents > remainingCents) {
     throw new ApiError(
-      "CONFLICT",
-      `付款金额超过合同剩余可付金额 ¥${(remainingCents / 100).toLocaleString("zh-CN")}`,
+      "CONTRACT_NOT_PAYABLE",
+      "仅已签署或生效合同可申请付款；暂不支持未签署合同预付款例外",
     );
   }
-  const payment = await contractRepository.createPayment(ctx, {
-    contractId,
-    amountCents: input.amount_cents,
-    currency: contract.currency,
-    method: input.method ?? null,
-    invoice: { text: input.notes ?? "" },
+  if (input.currency !== contract.currency) {
+    throw new ApiError("VALIDATION_FAILED", "付款币种必须与合同币种一致");
+  }
+  const evidence = normalizePaymentEvidence(input.payee, input.invoice);
+  const integrity = buildPaymentRequestIntegrity({
+    contract_id: contractId,
+    request_key: input.request_key,
+    amount_cents: input.amount_cents,
+    currency: input.currency,
+    method: input.method,
+    milestone_key: input.milestone_key,
+    milestone_label: input.milestone_label,
+    evidence,
   });
-  return paymentToDto(payment, contract);
+  const result = await contractRepository.createPaymentWithReservation({
+    ctx,
+    contractId,
+    requestKey: input.request_key,
+    requestHash: integrity.requestHash,
+    dedupeFingerprint: integrity.dedupeFingerprint,
+    data: {
+      amountCents: input.amount_cents,
+      currency: input.currency,
+      method: input.method,
+      accountInfo: encryptJson({
+        payee_name: evidence.payee.name,
+        bank_name: evidence.payee.bank_name,
+        account_number: evidence.payee.account_number,
+      }) as object,
+      invoice: { text: input.notes ?? "" },
+      milestoneKey: input.milestone_key,
+      milestoneLabel: input.milestone_label,
+      milestoneSnapshot: {
+        contract_version: contract.version,
+        payment_terms: contract.paymentTerms,
+      },
+      payeeNameSnapshot: evidence.payee.name,
+      payeeAccountFingerprint: evidence.payee.account_fingerprint,
+      payeeAccountFingerprintVersion: evidence.payee.fingerprint_version,
+      payeeAccountLast4: evidence.payee.account_last4,
+      invoiceNumber: evidence.invoice.number,
+      invoiceIssuer: evidence.invoice.issuer,
+      invoiceAmountCents: evidence.invoice.amount_cents,
+      invoiceCurrency: evidence.invoice.currency,
+      invoiceExceptionReason: evidence.invoice.exception_reason,
+      invoiceFingerprint: evidence.invoice.fingerprint,
+    },
+  });
+  if (result.kind === "not_found") throw new ApiError("RESOURCE_NOT_FOUND", "合同不存在");
+  if (result.kind === "not_payable") throw new ApiError("CONTRACT_NOT_PAYABLE");
+  if (result.kind === "currency_mismatch") {
+    throw new ApiError("VALIDATION_FAILED", "付款币种必须与合同币种一致");
+  }
+  if (result.kind === "request_key_reused") throw new ApiError("PAYMENT_REQUEST_KEY_REUSED");
+  if (result.kind === "duplicate") {
+    throw new ApiError("PAYMENT_DUPLICATE", undefined, { payment_id: result.paymentId });
+  }
+  if (result.kind === "limit_exceeded") {
+    throw new ApiError(
+      "PAYMENT_LIMIT_EXCEEDED",
+      `付款金额超过合同剩余可付金额 ¥${(result.remainingCents / 100).toLocaleString("zh-CN")}`,
+      { remaining_cents: result.remainingCents },
+    );
+  }
+  return paymentToDto(result.payment, contract);
 }
 
 export async function transitionPaymentStatus(
@@ -310,84 +391,95 @@ export async function transitionPaymentStatus(
   if (payment.status === "pending_approval" && to === "approved") {
     throw new ApiError("CONFLICT", "请在审批中心批准付款，不能直接绕过审批门");
   }
-
-  const extra: Record<string, unknown> = {};
-  if (to === "approved") {
-    extra.approvedAt = new Date();
-    extra.approvedBy = ctx.userId ?? null;
+  if (to === "paid") {
+    throw new ApiError(
+      "PAYMENT_RECONCILIATION_REQUIRED",
+      "请使用“登记付款与对账”填写流水和证据，不能直接标记已付款",
+    );
   }
-  if (to === "paid") extra.paidAt = new Date();
-
-  await contractRepository.transitionPayment(
-    ctx,
-    paymentId,
-    payment.status,
-    to,
-    reason ?? null,
-    extra,
-  );
 
   if (to === "pending_approval") {
-    await checkpointRepository.create(ctx, {
-      type: "payment",
-      status: "pending",
-      title: `付款审批：${payment.contract.campaignCreator.creator.displayName}`,
-      summary: `付款金额 ¥${(payment.amountCents / 100).toLocaleString("zh-CN")}`,
-      entityType: "payment_record",
-      entityId: paymentId,
-      payload: { contract_id: payment.contractId, amount_cents: payment.amountCents },
-      priority: "high",
-      assigneeRole: "finance",
+    const submitted = await contractRepository.submitPaymentForApproval({
+      ctx,
+      paymentId,
+      expectedVersion: payment.version,
     });
-  }
-
-  if (to === "paid") {
-    const contract = await contractRepository.findContract(ctx, payment.contractId);
-    if (contract) {
-      const paidTotal = await contractRepository.paidTotal(ctx, contract.id);
-      const nextPaymentStatus = paidTotal >= contract.amountCents ? "paid" : "partial";
-      await campaignRepository.transitionCreatorField(
-        ctx,
-        contract.campaignCreatorId,
-        "payment_status",
-        contract.campaignCreator.paymentStatus,
-        nextPaymentStatus,
-        "付款状态更新",
-        "user",
-      );
-    }
+    if (submitted.kind === "not_found") throw new ApiError("RESOURCE_NOT_FOUND", "付款记录不存在");
+    if (submitted.kind === "not_payable") throw new ApiError("CONTRACT_NOT_PAYABLE");
+    if (submitted.kind !== "submitted") throw new ApiError("PAYMENT_STATUS_CONFLICT");
+  } else {
+    const transitioned = await contractRepository.transitionPayment(
+      ctx,
+      paymentId,
+      payment.status,
+      to,
+      reason ?? null,
+    );
+    if (!transitioned) throw new ApiError("PAYMENT_STATUS_CONFLICT");
   }
 
   const updated = await contractRepository.findPayment(ctx, paymentId);
   return paymentToDto(updated!);
 }
 
-export async function onPaymentApprovalDecided(
+export async function decidePaymentCheckpoint(
+  ctx: TenantCtx,
+  checkpointId: string,
+  decision: "approved" | "rejected" | "changes_requested",
+  reason: string | null,
+  confirmation: CheckpointDecisionInput["payment_confirmation"],
+  canApprovePayment: boolean,
+): Promise<void> {
+  const result = await contractRepository.decidePaymentCheckpoint({
+    ctx,
+    checkpointId,
+    decision,
+    reason,
+    canApprovePayment,
+    ...(confirmation ? { confirmation } : {}),
+  });
+  if (result.kind === "decided") return;
+  if (result.kind === "not_pending") throw new ApiError("APPROVAL_ALREADY_DECIDED");
+  if (result.kind === "permission_denied") throw new ApiError("PERMISSION_DENIED", "缺少付款审批权限");
+  if (result.kind === "self_approval") throw new ApiError("PAYMENT_SELF_APPROVAL_FORBIDDEN");
+  if (result.kind === "not_payable") throw new ApiError("CONTRACT_NOT_PAYABLE");
+  if (result.kind === "confirmation_required") {
+    throw new ApiError("VALIDATION_FAILED", "批准付款前必须人工核对收款账户和发票/免票依据", {
+      snapshot_hash: result.snapshotHash,
+    });
+  }
+  if (result.kind === "snapshot_mismatch") {
+    throw new ApiError("PAYMENT_APPROVAL_SNAPSHOT_MISMATCH");
+  }
+  throw new ApiError("PAYMENT_STATUS_CONFLICT");
+}
+
+export async function reconcilePayment(
   ctx: TenantCtx,
   paymentId: string,
-  decision: "approved" | "rejected" | "changes_requested",
-): Promise<void> {
-  const payment = await contractRepository.findPayment(ctx, paymentId);
-  if (!payment || payment.status !== "pending_approval") return;
-  if (decision === "approved") {
-    await contractRepository.transitionPayment(
-      ctx,
-      paymentId,
-      "pending_approval",
-      "approved",
-      "付款审批通过",
-      {
-        approvedAt: new Date(),
-        approvedBy: ctx.userId ?? null,
-      },
-    );
-  } else {
-    await contractRepository.transitionPayment(
-      ctx,
-      paymentId,
-      "pending_approval",
-      "cancelled",
-      "付款审批驳回",
-    );
+  input: PaymentReconcileInput,
+): Promise<PaymentDto> {
+  const result = await contractRepository.reconcilePayment({
+    ctx,
+    paymentId,
+    settlementRequestKey: input.settlement_request_key,
+    reconciliationReference: input.reconciliation_reference.trim(),
+    paidAt: new Date(input.paid_at),
+    evidenceNote: input.evidence_note.trim(),
+    evidenceDocumentRef: input.evidence_document_ref?.trim() || null,
+  });
+  if (result.kind === "not_found") throw new ApiError("RESOURCE_NOT_FOUND", "付款记录不存在");
+  if (result.kind === "status_conflict") throw new ApiError("PAYMENT_STATUS_CONFLICT");
+  if (result.kind === "approval_required") {
+    throw new ApiError("PAYMENT_APPROVED_CHECKPOINT_REQUIRED");
   }
+  if (result.kind === "snapshot_mismatch") {
+    throw new ApiError("PAYMENT_APPROVAL_SNAPSHOT_MISMATCH");
+  }
+  if (result.kind === "settlement_key_reused") throw new ApiError("PAYMENT_REQUEST_KEY_REUSED");
+  if (result.kind === "reconciliation_duplicate") {
+    throw new ApiError("RECONCILIATION_REFERENCE_DUPLICATE");
+  }
+  const payment = await contractRepository.findPayment(ctx, result.payment.id);
+  return paymentToDto(payment!);
 }

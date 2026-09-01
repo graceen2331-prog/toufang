@@ -3,7 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiFetch, apiFetchList } from "@/lib/api";
-import type { ContractDto, PaymentDto } from "@/shared/schemas/outreach";
+import type {
+  ContractDto,
+  PaymentCreateInput,
+  PaymentDto,
+  PaymentReconcileInput,
+} from "@/shared/schemas/outreach";
 
 export interface ContractFilters {
   status?: string;
@@ -96,17 +101,29 @@ export function useTransitionContractStatus() {
 export function useCreatePayment(contractId: string) {
   const invalidate = useInvalidateContracts();
   return useMutation({
-    mutationFn: (input: {
-      amount_cents: number;
-      method?: "bank" | "alipay" | "other" | null;
-      notes?: string | null;
-    }) =>
+    mutationFn: (input: PaymentCreateInput) =>
       apiFetch<PaymentDto>(`/contracts/${contractId}/payments`, {
         method: "POST",
         body: input,
       }),
     onSuccess: () => {
       toast.success("付款记录已创建");
+      invalidate(contractId);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useReconcilePayment(contractId: string) {
+  const invalidate = useInvalidateContracts();
+  return useMutation({
+    mutationFn: ({ paymentId, input }: { paymentId: string; input: PaymentReconcileInput }) =>
+      apiFetch<PaymentDto>(`/payments/${paymentId}/reconcile`, {
+        method: "POST",
+        body: input,
+      }),
+    onSuccess: () => {
+      toast.success("付款与对账证据已登记");
       invalidate(contractId);
     },
     onError: (err) => toast.error(err.message),

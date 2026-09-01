@@ -4,7 +4,7 @@ const findContract = vi.fn();
 const transitionContract = vi.fn();
 const findPayment = vi.fn();
 const transitionPayment = vi.fn();
-const createPayment = vi.fn();
+const createPaymentWithReservation = vi.fn();
 
 vi.mock("./contract.repository", () => ({
   contractRepository: {
@@ -12,7 +12,7 @@ vi.mock("./contract.repository", () => ({
     transitionContract,
     findPayment,
     transitionPayment,
-    createPayment,
+    createPaymentWithReservation,
   },
 }));
 
@@ -104,9 +104,22 @@ const payment = {
   },
 };
 
+const validPaymentInput = {
+  request_key: "00000000-0000-4000-8000-000000000001",
+  amount_cents: 500_000,
+  currency: "CNY" as const,
+  method: "bank" as const,
+  milestone_key: "delivery_milestone",
+  milestone_label: "交付节点付款",
+  payee: { name: "林小鹿", bank_name: "示例银行", account_number: "622200001234" },
+  invoice: { exception_reason: "达人暂不提供发票，已经财务人工确认" },
+};
+
 describe("合同与付款审批门", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.DATA_ENCRYPTION_KEY = "contract-service-test-key";
+    process.env.PAYMENT_FINGERPRINT_KEY = "payment-fingerprint-test-key";
   });
 
   it("不允许绕过审批中心直接把审核中合同标记为已发送", async () => {
@@ -140,9 +153,13 @@ describe("合同与付款审批门", () => {
     const { createPayment: create } = await import("./contract.service");
 
     await expect(
-      create({ orgId: "org-1", userId: "user-1" }, "contract-1", { amount_cents: 100_000 }),
-    ).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(createPayment).not.toHaveBeenCalled();
+      create(
+        { orgId: "org-1", userId: "user-1" },
+        "contract-1",
+        { ...validPaymentInput, amount_cents: 100_000 },
+      ),
+    ).rejects.toMatchObject({ code: "CONTRACT_NOT_PAYABLE" });
+    expect(createPaymentWithReservation).not.toHaveBeenCalled();
   });
 
   it("付款金额不可超过合同剩余可付金额", async () => {
@@ -156,26 +173,40 @@ describe("合同与付款审批门", () => {
     });
     const { createPayment: create } = await import("./contract.service");
 
+    createPaymentWithReservation.mockResolvedValue({
+      kind: "limit_exceeded",
+      remainingCents: 500_000,
+    });
     await expect(
-      create({ orgId: "org-1", userId: "user-1" }, "contract-1", { amount_cents: 600_000 }),
-    ).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(createPayment).not.toHaveBeenCalled();
+      create(
+        { orgId: "org-1", userId: "user-1" },
+        "contract-1",
+        { ...validPaymentInput, amount_cents: 600_000 },
+      ),
+    ).rejects.toMatchObject({ code: "PAYMENT_LIMIT_EXCEEDED" });
   });
 
   it("已签署合同可在剩余额度内登记付款", async () => {
     findContract.mockResolvedValue({ ...contract, status: "signed", payments: [] });
-    createPayment.mockResolvedValue({ ...payment, status: "not_started", amountCents: 500_000 });
+    createPaymentWithReservation.mockResolvedValue({
+      kind: "created",
+      payment: { ...payment, status: "not_started", amountCents: 500_000 },
+      reused: false,
+    });
     const { createPayment: create } = await import("./contract.service");
 
     await expect(
       create({ orgId: "org-1", userId: "user-1" }, "contract-1", {
-        amount_cents: 500_000,
-        method: "bank",
+        ...validPaymentInput,
       }),
     ).resolves.toMatchObject({ amount_cents: 500_000, status: "not_started" });
-    expect(createPayment).toHaveBeenCalledWith(
-      { orgId: "org-1", userId: "user-1" },
-      expect.objectContaining({ contractId: "contract-1", amountCents: 500_000 }),
+    expect(createPaymentWithReservation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ctx: { orgId: "org-1", userId: "user-1" },
+        contractId: "contract-1",
+        requestKey: validPaymentInput.request_key,
+        data: expect.objectContaining({ amountCents: 500_000 }),
+      }),
     );
   });
 });

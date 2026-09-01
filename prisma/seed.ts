@@ -68,11 +68,13 @@ async function main() {
   const admin = await upsertUser("admin@demo.com", "林星澜", passwordHash);
   const manager = await upsertUser("manager@demo.com", "陈品牌", passwordHash);
   const kol = await upsertUser("kol@demo.com", "赵达人", passwordHash);
+  const finance = await upsertUser("finance@demo.com", "钱财务", passwordHash);
   const viewer = await upsertUser("viewer@demo.com", "王只读", passwordHash);
 
   await upsertMembership(org.id, admin.id, roles.get("admin")!);
   await upsertMembership(org.id, manager.id, roles.get("manager")!);
   await upsertMembership(org.id, kol.id, roles.get("kol_manager")!);
+  await upsertMembership(org.id, finance.id, roles.get("finance")!);
   await upsertMembership(org.id, viewer.id, roles.get("viewer")!);
 
   // 默认工作区
@@ -198,6 +200,7 @@ async function main() {
   console.log("  admin@demo.com    管理员（星澜传媒 + 北辰品牌部双组织）");
   console.log("  manager@demo.com  市场经理");
   console.log("  kol@demo.com      达人运营");
+  console.log("  finance@demo.com  财务");
   console.log("  viewer@demo.com   只读成员");
 }
 
@@ -206,4 +209,8 @@ main()
     console.error("[seed] 失败", err);
     process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    await prisma.$disconnect();
+    const { prisma: appPrisma } = await import("../src/server/db/client");
+    await appPrisma.$disconnect();
+  });

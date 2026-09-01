@@ -156,6 +156,9 @@ function PaymentsTable({ contractId, payments }: { contractId: string; payments:
         <TableRow>
           <TableHead>金额</TableHead>
           <TableHead>状态</TableHead>
+          <TableHead>里程碑</TableHead>
+          <TableHead>收款账户</TableHead>
+          <TableHead>票据 / 对账</TableHead>
           <TableHead>方式</TableHead>
           <TableHead className="w-10" />
         </TableRow>
@@ -166,6 +169,34 @@ function PaymentsTable({ contractId, payments }: { contractId: string; payments:
             <TableCell className="tabular-nums">{formatCents(payment.amount_cents)}</TableCell>
             <TableCell>
               <StatusTag source={PAYMENT_STATUS} value={payment.status} />
+              {payment.legacy_evidence_incomplete && (
+                <p className="mt-1 text-xs text-amber-700">历史记录，证据字段不完整</p>
+              )}
+            </TableCell>
+            <TableCell>{payment.milestone_label ?? "—"}</TableCell>
+            <TableCell>
+              {payment.payee_name ? (
+                <span>
+                  {payment.payee_name} · {payment.payee_bank_name ?? "机构未填"} · 尾号
+                  {payment.payee_account_last4 ?? "—"}
+                </span>
+              ) : (
+                "—"
+              )}
+            </TableCell>
+            <TableCell>
+              <div className="space-y-1 text-xs">
+                <p>
+                  {payment.invoice_number
+                    ? `发票 ${payment.invoice_number}`
+                    : payment.invoice_exception_reason
+                      ? "已填写免票依据"
+                      : "票据待补"}
+                </p>
+                {payment.reconciliation_reference && (
+                  <p className="text-muted-foreground">流水 {payment.reconciliation_reference}</p>
+                )}
+              </div>
             </TableCell>
             <TableCell>
               {payment.method ? (PAYMENT_METHOD_LABELS[payment.method] ?? payment.method) : "—"}

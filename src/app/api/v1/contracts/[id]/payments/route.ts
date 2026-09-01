@@ -10,7 +10,7 @@ export const GET = createApiHandler({
 
 export const POST = createApiHandler({
   permission: "payment:write",
-  body: PaymentCreateSchema.omit({ contract_id: true }),
+  body: PaymentCreateSchema,
   audit: "payment.create",
   created: true,
   handler: async (ctx) => {

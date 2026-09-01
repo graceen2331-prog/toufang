@@ -10,6 +10,13 @@ export const CheckpointDecisionSchema = z.object({
       acknowledged_finding_ids: z.array(z.string().min(1)).min(1),
     })
     .optional(),
+  payment_confirmation: z
+    .object({
+      account_manually_checked: z.literal(true),
+      invoice_manually_checked: z.literal(true),
+      snapshot_hash: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .optional(),
 });
 export type CheckpointDecisionInput = z.infer<typeof CheckpointDecisionSchema>;
 

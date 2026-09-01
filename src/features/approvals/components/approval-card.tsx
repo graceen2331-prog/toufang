@@ -6,6 +6,7 @@ import { Check, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -67,12 +68,19 @@ export function ApprovalCard({
   const decide = useDecideApproval();
   const [approveOpen, setApproveOpen] = useState(false);
   const [approveReason, setApproveReason] = useState("");
+  const [accountChecked, setAccountChecked] = useState(false);
+  const [invoiceChecked, setInvoiceChecked] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const isPending = checkpoint.status === "pending";
   const isCompact = density === "compact";
   const contentRisk = contentRiskSummary(checkpoint);
   const highRiskContent = contentRisk.highRisk;
+  const isPayment = checkpoint.type === "payment";
+  const paymentSnapshotHash =
+    isPayment && typeof checkpoint.payload.snapshot_hash === "string"
+      ? checkpoint.payload.snapshot_hash
+      : null;
 
   const content = (
     <div className={cn(isCompact ? "space-y-3" : "flex items-start justify-between gap-4")}>
@@ -143,7 +151,86 @@ export function ApprovalCard({
         </Card>
       )}
 
-      {highRiskContent ? (
+      {isPayment ? (
+        <Dialog
+          open={approveOpen}
+          onOpenChange={(open) => {
+            setApproveOpen(open);
+            if (!open) {
+              setApproveReason("");
+              setAccountChecked(false);
+              setInvoiceChecked(false);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>确认批准付款申请？</DialogTitle>
+              <DialogDescription>
+                系统只保存内部授权，不会执行银行转账。请人工核对收款账户和票据依据。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 rounded-md border p-3 text-sm">
+              <label className="flex items-start gap-2">
+                <Checkbox
+                  checked={accountChecked}
+                  onCheckedChange={(checked) => setAccountChecked(checked === true)}
+                />
+                <span>我已人工核对收款人、开户机构和账号末四位</span>
+              </label>
+              <label className="flex items-start gap-2">
+                <Checkbox
+                  checked={invoiceChecked}
+                  onCheckedChange={(checked) => setInvoiceChecked(checked === true)}
+                />
+                <span>我已人工核对发票信息或免票依据</span>
+              </label>
+              {paymentSnapshotHash && (
+                <p className="text-xs text-muted-foreground">
+                  审批快照 {paymentSnapshotHash.slice(0, 12)}
+                </p>
+              )}
+            </div>
+            <Textarea
+              placeholder="审批说明（至少 5 个字）"
+              rows={3}
+              value={approveReason}
+              onChange={(event) => setApproveReason(event.target.value)}
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setApproveOpen(false)}>
+                取消
+              </Button>
+              <Button
+                disabled={
+                  !paymentSnapshotHash ||
+                  !accountChecked ||
+                  !invoiceChecked ||
+                  approveReason.trim().length < 5 ||
+                  decide.isPending
+                }
+                onClick={() =>
+                  decide.mutate(
+                    {
+                      id: checkpoint.id,
+                      decision: "approved",
+                      reason: approveReason.trim(),
+                      payment_confirmation: {
+                        account_manually_checked: true,
+                        invoice_manually_checked: true,
+                        snapshot_hash: paymentSnapshotHash!,
+                      },
+                    },
+                    { onSuccess: () => setApproveOpen(false) },
+                  )
+                }
+              >
+                确认授权
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : highRiskContent ? (
         <Dialog
           open={approveOpen}
           onOpenChange={(open) => {

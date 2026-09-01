@@ -62,15 +62,17 @@ export function useDecideApproval() {
       decision,
       reason,
       override,
+      payment_confirmation,
     }: {
       id: string;
       decision: "approved" | "rejected" | "changes_requested";
       reason?: string;
       override?: CheckpointDecisionInput["override"];
+      payment_confirmation?: CheckpointDecisionInput["payment_confirmation"];
     }) =>
       apiFetch<CheckpointDto>(`/approvals/${id}/decide`, {
         method: "POST",
-        body: { decision, reason, override },
+        body: { decision, reason, override, payment_confirmation },
       }),
     onSuccess: (_data, vars) => {
       toast.success(DECISION_TOASTS[vars.decision] ?? "已处理");

@@ -34,6 +34,26 @@ async function approveFirst(page: Page, titlePattern: RegExp, timeout = 45_000) 
   await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 15_000 });
 }
 
+async function approvePaymentAsFinance(browser: Browser, titlePattern: RegExp) {
+  const context = await browser.newContext({
+    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
+    locale: "zh-CN",
+  });
+  const page = await context.newPage();
+  await login(page, "finance@demo.com");
+  await page.goto("/approvals");
+  const card = page.locator("[data-slot=card]").filter({ hasText: titlePattern }).first();
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.getByRole("button", { name: "批准" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByText("我已人工核对收款人、开户机构和账号末四位").click();
+  await dialog.getByText("我已人工核对发票信息或免票依据").click();
+  await dialog.getByPlaceholder("审批说明（至少 5 个字）").fill("已核对合同、收款账户和发票信息");
+  await dialog.getByRole("button", { name: "确认授权" }).click();
+  await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 15_000 });
+  await context.close();
+}
+
 async function waitForWorkflowApproval(page: Page) {
   await expect(page.getByText(/工作流已暂停.*(待办栏|等待人工审批)/)).toBeVisible({
     timeout: 45_000,
@@ -156,7 +176,7 @@ async function completeOutreachAndNegotiation(page: Page, campaignName: string) 
   await expect(page.getByText("合作条款已确认")).toBeVisible({ timeout: 10_000 });
 }
 
-async function createContractAndPayment(page: Page, campaignName: string) {
+async function createContractAndPayment(page: Page, browser: Browser, campaignName: string) {
   await page.goto("/contracts");
   await page.getByRole("button", { name: "新建合同" }).click();
   let dialog = page.getByRole("dialog");
@@ -191,8 +211,13 @@ async function createContractAndPayment(page: Page, campaignName: string) {
 
   await page.getByRole("button", { name: "登记付款" }).click();
   dialog = page.getByRole("dialog");
-  await dialog.locator("input").fill("30000");
-  await dialog.locator("textarea").fill("首付款登记。");
+  await dialog.locator("input").nth(0).fill("30000");
+  await dialog.locator("input").nth(1).fill("W9 测试达人");
+  await dialog.locator("input").nth(2).fill("测试银行");
+  await dialog.locator("input").nth(3).fill("622200001234");
+  await dialog.locator("input").nth(4).fill(`W9-FP-${Date.now()}`);
+  await dialog.locator("input").nth(5).fill("W9 测试开票方");
+  await dialog.locator("textarea").fill("首期付款，等待财务人工审批。");
   await dialog.getByRole("button", { name: "登记付款" }).click();
   await expect(page.getByText("付款记录已创建")).toBeVisible({ timeout: 10_000 });
 
@@ -202,7 +227,20 @@ async function createContractAndPayment(page: Page, campaignName: string) {
   await page.getByRole("menuitem", { name: "待审批" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "提交审批" }).click();
   await expect(page.getByText("付款状态已更新")).toBeVisible({ timeout: 10_000 });
-  await approveFirst(page, /付款审批/);
+  await approvePaymentAsFinance(browser, /付款审批/);
+
+  await page.reload();
+  const approvedPayment = page.getByRole("row").filter({ hasText: "已批准" }).first();
+  await expect(approvedPayment).toBeVisible({ timeout: 15_000 });
+  await approvedPayment.getByRole("button").click();
+  await page.getByRole("menuitem", { name: "登记付款与对账" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.locator("input").nth(0).fill(`W9-BANK-${Date.now()}`);
+  await dialog.getByPlaceholder(/至少 10 个字/).fill("已核对网银回单金额和收款账户末四位");
+  await dialog.locator("input").nth(2).fill("receipt://w9-acceptance");
+  await dialog.getByRole("button", { name: "确认登记" }).click();
+  await expect(page.getByText("付款与对账证据已登记")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("row").filter({ hasText: "已付款" }).first()).toBeVisible();
 }
 
 async function submitReviewPublishAndMetric(
@@ -356,7 +394,7 @@ test.describe("W9 最终验收", () => {
     await transitionBrief(page, "已批准");
 
     await completeOutreachAndNegotiation(page, campaignName);
-    await createContractAndPayment(page, campaignName);
+    await createContractAndPayment(page, browser, campaignName);
     await submitReviewPublishAndMetric(page, campaignName, contentTitle);
     await generateApproveAndExportReport(page, campaignName);
 

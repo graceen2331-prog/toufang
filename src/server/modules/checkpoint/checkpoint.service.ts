@@ -55,6 +55,8 @@ export async function decideCheckpoint(
   decision: "approved" | "rejected" | "changes_requested",
   reason?: string | null,
   override?: CheckpointDecisionInput["override"],
+  paymentConfirmation?: CheckpointDecisionInput["payment_confirmation"],
+  canApprovePayment = false,
 ): Promise<CheckpointDto> {
   const checkpoint = await checkpointRepository.findById(ctx, id);
   if (!checkpoint) throw new ApiError("RESOURCE_NOT_FOUND", "审批项不存在");
@@ -74,6 +76,27 @@ export async function decideCheckpoint(
       checkpoint.entityId,
       decision,
       reason?.trim() || null,
+    );
+    const updated = await checkpointRepository.findById(ctx, id);
+    const names = await getUserNames(updated?.decidedBy ? [updated.decidedBy] : []);
+    return toDto(updated!, names);
+  }
+
+  if (
+    checkpoint.type === "payment" &&
+    checkpoint.entityType === "payment_record" &&
+    checkpoint.entityId
+  ) {
+    const { decidePaymentCheckpoint } = await import(
+      "@/server/modules/contract/contract.service"
+    );
+    await decidePaymentCheckpoint(
+      ctx,
+      checkpoint.id,
+      decision,
+      reason?.trim() || null,
+      paymentConfirmation,
+      canApprovePayment,
     );
     const updated = await checkpointRepository.findById(ctx, id);
     const names = await getUserNames(updated?.decidedBy ? [updated.decidedBy] : []);
@@ -119,17 +142,6 @@ export async function decideCheckpoint(
       "@/server/modules/contract/contract.service"
     );
     await onContractApprovalDecided(ctx, checkpoint.entityId, decision);
-  }
-
-  if (
-    checkpoint.type === "payment" &&
-    checkpoint.entityType === "payment_record" &&
-    checkpoint.entityId
-  ) {
-    const { onPaymentApprovalDecided } = await import(
-      "@/server/modules/contract/contract.service"
-    );
-    await onPaymentApprovalDecided(ctx, checkpoint.entityId, decision);
   }
 
   const updated = await checkpointRepository.findById(ctx, id);
