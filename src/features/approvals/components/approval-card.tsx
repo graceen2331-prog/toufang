@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { format } from "date-fns";
-import { Check, X } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Check, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,11 +16,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PermissionGate } from "@/components/shared/permission-gate";
 import { StatusTag } from "@/components/shared/status-tag";
 import { ApprovalPayloadSummary } from "@/features/approvals/components/approval-payload-summary";
-import { useDecideApproval } from "@/features/approvals/queries";
+import { useDecideApproval, useEscalateApproval, useTransferApproval } from "@/features/approvals/queries";
 import { cn } from "@/lib/utils";
 import { CHECKPOINT_STATUS } from "@/shared/constants/status";
 import { CHECKPOINT_TYPE_LABELS, type CheckpointDto } from "@/shared/schemas/checkpoint";
@@ -66,12 +65,19 @@ export function ApprovalCard({
   density?: "default" | "compact";
 }) {
   const decide = useDecideApproval();
+  const transfer = useTransferApproval();
+  const escalate = useEscalateApproval();
   const [approveOpen, setApproveOpen] = useState(false);
   const [approveReason, setApproveReason] = useState("");
   const [accountChecked, setAccountChecked] = useState(false);
   const [invoiceChecked, setInvoiceChecked] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferUserId, setTransferUserId] = useState("");
+  const [transferReason, setTransferReason] = useState("");
+  const [escalateOpen, setEscalateOpen] = useState(false);
+  const [escalateReason, setEscalateReason] = useState("");
   const isPending = checkpoint.status === "pending";
   const isCompact = density === "compact";
   const contentRisk = contentRiskSummary(checkpoint);
@@ -105,6 +111,16 @@ export function ApprovalCard({
         <p className="text-xs text-muted-foreground">
           创建于 {format(new Date(checkpoint.created_at), "yyyy-MM-dd HH:mm")}
         </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>发起人：{checkpoint.created_by_name ?? "未知"}</span>
+          <span>审批人：{checkpoint.assignee_name ?? (checkpoint.assignee_role ? `角色池（${checkpoint.assignee_role}）` : "公共审批池")}</span>
+          {checkpoint.due_at && (
+            <span className={checkpoint.is_overdue ? "font-medium text-destructive" : ""}>
+              {checkpoint.is_overdue ? `已逾期 ${Math.max(1, Math.floor(checkpoint.overdue_seconds / 3600))} 小时` : `截止 ${format(new Date(checkpoint.due_at), "MM-dd HH:mm")}`}
+            </span>
+          )}
+          {checkpoint.escalation_level > 0 && <span>已升级 {checkpoint.escalation_level} 次</span>}
+        </div>
         {!isPending && checkpoint.decided_at && (
           <p className="text-xs text-muted-foreground">
             {checkpoint.decided_by_name ?? "未知"} 于{" "}
@@ -125,6 +141,16 @@ export function ApprovalCard({
               <Check className="size-4" />
               {contentRisk.blocking ? "必须修改" : "批准"}
             </Button>
+            <PermissionGate permission="approval:assign">
+              <Button size="sm" variant="outline" onClick={() => setTransferOpen(true)} disabled={decide.isPending || transfer.isPending}>
+                <ArrowRightLeft className="size-4" />转交
+              </Button>
+            </PermissionGate>
+            <PermissionGate permission="approval:escalate">
+              <Button size="sm" variant="outline" onClick={() => setEscalateOpen(true)} disabled={decide.isPending || escalate.isPending}>
+                <AlertTriangle className="size-4" />升级
+              </Button>
+            </PermissionGate>
             <Button
               size="sm"
               variant="destructive"
@@ -279,21 +305,16 @@ export function ApprovalCard({
           </DialogContent>
         </Dialog>
       ) : (
-        <ConfirmDialog
-          open={approveOpen}
-          onOpenChange={setApproveOpen}
-          title="确认批准？"
-          description={`批准后「${checkpoint.title}」对应的动作将继续执行。`}
-          confirmLabel="批准"
-          destructive={false}
-          pending={decide.isPending}
-          onConfirm={() =>
-            decide.mutate(
-              { id: checkpoint.id, decision: "approved" },
-              { onSuccess: () => setApproveOpen(false) },
-            )
-          }
-        />
+        <Dialog open={approveOpen} onOpenChange={(open) => { setApproveOpen(open); if (!open) setApproveReason(""); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader><DialogTitle>确认批准？</DialogTitle><DialogDescription>批准后「{checkpoint.title}」对应的动作将继续执行，请填写处理意见。</DialogDescription></DialogHeader>
+            <Textarea placeholder="批准意见（至少 5 个字）" rows={3} value={approveReason} onChange={(event) => setApproveReason(event.target.value)} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setApproveOpen(false)}>取消</Button>
+              <Button disabled={approveReason.trim().length < 5 || decide.isPending} onClick={() => decide.mutate({ id: checkpoint.id, decision: "approved", reason: approveReason.trim(), expected_version: checkpoint.version }, { onSuccess: () => setApproveOpen(false) })}>确认批准</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       <Dialog
@@ -331,6 +352,20 @@ export function ApprovalCard({
               {decide.isPending ? "处理中…" : "确认驳回"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={transferOpen} onOpenChange={(open) => { setTransferOpen(open); if (!open) { setTransferUserId(""); setTransferReason(""); } }}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>转交审批</DialogTitle><DialogDescription>请输入同租户且具备审批权限的用户 ID，并填写原因。</DialogDescription></DialogHeader>
+          <Textarea placeholder="目标用户 ID" rows={1} value={transferUserId} onChange={(e) => setTransferUserId(e.target.value)} />
+          <Textarea placeholder="转交原因（必填）" rows={3} value={transferReason} onChange={(e) => setTransferReason(e.target.value)} />
+          <DialogFooter><Button variant="outline" onClick={() => setTransferOpen(false)}>取消</Button><Button disabled={!transferUserId.trim() || !transferReason.trim() || transfer.isPending} onClick={() => transfer.mutate({ id: checkpoint.id, to_user_id: transferUserId.trim(), reason: transferReason.trim(), expected_version: checkpoint.version }, { onSuccess: () => setTransferOpen(false) })}>确认转交</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={escalateOpen} onOpenChange={(open) => { setEscalateOpen(open); if (!open) setEscalateReason(""); }}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>升级审批</DialogTitle><DialogDescription>升级会提高优先级并留下审计记录，不会自动批准。</DialogDescription></DialogHeader>
+          <Textarea placeholder="升级原因（必填）" rows={3} value={escalateReason} onChange={(e) => setEscalateReason(e.target.value)} />
+          <DialogFooter><Button variant="outline" onClick={() => setEscalateOpen(false)}>取消</Button><Button disabled={!escalateReason.trim() || escalate.isPending} onClick={() => escalate.mutate({ id: checkpoint.id, reason: escalateReason.trim(), expected_version: checkpoint.version }, { onSuccess: () => setEscalateOpen(false) })}>确认升级</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </>

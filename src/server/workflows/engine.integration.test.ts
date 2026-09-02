@@ -66,7 +66,7 @@ describe.skipIf(!hasInfra)("工作流引擎（集成）", () => {
     expect(checkpoint).not.toBeNull();
     expect(checkpoint?.type).toBe("strategy");
 
-    await checkpointService.decideCheckpoint(ctx, checkpoint!.id, "approved");
+    await checkpointService.decideCheckpoint(ctx, checkpoint!.id, "approved", "已核对策略内容，批准执行");
     await engine.executeStep(orgId, run.id, "apply_strategy");
 
     state = await prisma.workflowRun.findUnique({ where: { id: run.id } });

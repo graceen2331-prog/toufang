@@ -13,6 +13,9 @@ export interface ApprovalFilters {
   cursor?: string | null;
   limit?: number;
   refetchIntervalMs?: number;
+  assignee?: string;
+  created_by?: string;
+  overdue?: boolean;
 }
 
 export const approvalKeys = {
@@ -32,6 +35,9 @@ export function useApprovals(params: ApprovalFilters) {
           campaign_id: params.campaign_id,
           cursor: params.cursor,
           limit: params.limit ?? 20,
+          assignee: params.assignee,
+          created_by: params.created_by,
+          overdue: params.overdue ? "true" : undefined,
         },
       }),
     placeholderData: (prev) => prev,
@@ -63,19 +69,47 @@ export function useDecideApproval() {
       reason,
       override,
       payment_confirmation,
+      expected_version,
     }: {
       id: string;
       decision: "approved" | "rejected" | "changes_requested";
       reason?: string;
       override?: CheckpointDecisionInput["override"];
       payment_confirmation?: CheckpointDecisionInput["payment_confirmation"];
+      expected_version?: number;
     }) =>
       apiFetch<CheckpointDto>(`/approvals/${id}/decide`, {
         method: "POST",
-        body: { decision, reason, override, payment_confirmation },
+        body: { decision, reason, override, payment_confirmation, expected_version },
       }),
     onSuccess: (_data, vars) => {
       toast.success(DECISION_TOASTS[vars.decision] ?? "已处理");
+      void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useTransferApproval() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, to_user_id, reason, expected_version }: { id: string; to_user_id: string; reason: string; expected_version?: number }) =>
+      apiFetch<CheckpointDto>(`/approvals/${id}/transfer`, { method: "POST", body: { to_user_id, reason, expected_version } }),
+    onSuccess: () => {
+      toast.success("审批已转交");
+      void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useEscalateApproval() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason, target_user_id, expected_version }: { id: string; reason: string; target_user_id?: string | null; expected_version?: number }) =>
+      apiFetch<CheckpointDto>(`/approvals/${id}/escalate`, { method: "POST", body: { reason, target_user_id, expected_version } }),
+    onSuccess: () => {
+      toast.success("审批已升级");
       void queryClient.invalidateQueries({ queryKey: approvalKeys.all });
     },
     onError: (err) => toast.error(err.message),

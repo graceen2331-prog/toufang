@@ -503,6 +503,7 @@ export const analyticsRepository = {
     reportId: string;
     decision: "approved" | "rejected" | "changes_requested";
     reason: string | null;
+    expectedVersion?: number;
   }) {
     return prisma.$transaction(async (tx) => {
       const checkpoint = await tx.humanCheckpoint.findFirst({
@@ -513,6 +514,7 @@ export const analyticsRepository = {
           entityType: "report",
           entityId: input.reportId,
           status: "pending",
+          ...(input.expectedVersion === undefined ? {} : { version: input.expectedVersion }),
         },
       });
       if (!checkpoint) return { kind: "not_pending" as const };
@@ -557,15 +559,33 @@ export const analyticsRepository = {
       });
       if (reportUpdated.count !== 1) return { kind: "report_conflict" as const };
       const checkpointUpdated = await tx.humanCheckpoint.updateMany({
-        where: { id: checkpoint.id, tenantId: input.ctx.orgId, status: "pending" },
+        where: {
+          id: checkpoint.id,
+          tenantId: input.ctx.orgId,
+          status: "pending",
+          ...(input.expectedVersion === undefined ? {} : { version: input.expectedVersion }),
+        },
         data: {
           status: input.decision,
           decidedBy: input.ctx.userId ?? null,
           decidedAt: new Date(),
           decisionReason: input.reason,
+          version: { increment: 1 },
         },
       });
       if (checkpointUpdated.count !== 1) return { kind: "not_pending" as const };
+      await tx.humanCheckpointEvent.create({
+        data: {
+          tenantId: input.ctx.orgId,
+          checkpointId: checkpoint.id,
+          eventType: "decided",
+          actorId: input.ctx.userId ?? null,
+          fromStatus: "pending",
+          toStatus: input.decision,
+          fromAssigneeId: checkpoint.assigneeId,
+          reason: input.reason,
+        },
+      });
 
       await recordStatusEvent(
         {

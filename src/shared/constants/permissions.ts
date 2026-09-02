@@ -45,6 +45,8 @@ export const PERMISSIONS = {
   // 审批
   "approval:read": "查看审批",
   "approval:decide": "处理审批",
+  "approval:assign": "转交审批",
+  "approval:escalate": "升级审批",
   // 管理
   "admin:users": "管理用户与角色",
   "admin:integrations": "管理集成",
@@ -94,6 +96,8 @@ export const SYSTEM_ROLES: Record<string, { name: string; permissions: Permissio
       "ai:monitor",
       "approval:read",
       "approval:decide",
+      "approval:assign",
+      "approval:escalate",
     ],
   },
   kol_manager: {
@@ -134,6 +138,7 @@ export const SYSTEM_ROLES: Record<string, { name: string; permissions: Permissio
       "ai:run",
       "approval:read",
       "approval:decide",
+      "approval:escalate",
     ],
   },
   finance: {

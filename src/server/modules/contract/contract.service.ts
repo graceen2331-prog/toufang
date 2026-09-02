@@ -429,6 +429,7 @@ export async function decidePaymentCheckpoint(
   reason: string | null,
   confirmation: CheckpointDecisionInput["payment_confirmation"],
   canApprovePayment: boolean,
+  expectedVersion?: number,
 ): Promise<void> {
   const result = await contractRepository.decidePaymentCheckpoint({
     ctx,
@@ -437,6 +438,7 @@ export async function decidePaymentCheckpoint(
     reason,
     canApprovePayment,
     ...(confirmation ? { confirmation } : {}),
+    ...(expectedVersion === undefined ? {} : { expectedVersion }),
   });
   if (result.kind === "decided") return;
   if (result.kind === "not_pending") throw new ApiError("APPROVAL_ALREADY_DECIDED");

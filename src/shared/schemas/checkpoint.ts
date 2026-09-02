@@ -3,6 +3,7 @@ import { z } from "zod";
 export const CheckpointDecisionSchema = z.object({
   decision: z.enum(["approved", "rejected", "changes_requested"]),
   reason: z.string().max(1000).nullish(),
+  expected_version: z.number().int().nonnegative().optional(),
   override: z
     .object({
       enabled: z.literal(true),
@@ -20,6 +21,20 @@ export const CheckpointDecisionSchema = z.object({
 });
 export type CheckpointDecisionInput = z.infer<typeof CheckpointDecisionSchema>;
 
+export const CheckpointTransferSchema = z.object({
+  to_user_id: z.string().trim().min(1).max(100),
+  reason: z.string().trim().min(1).max(1000),
+  expected_version: z.number().int().nonnegative().optional(),
+});
+export type CheckpointTransferInput = z.infer<typeof CheckpointTransferSchema>;
+
+export const CheckpointEscalateSchema = z.object({
+  reason: z.string().trim().min(1).max(1000),
+  target_user_id: z.string().trim().min(1).max(100).nullish(),
+  expected_version: z.number().int().nonnegative().optional(),
+});
+export type CheckpointEscalateInput = z.infer<typeof CheckpointEscalateSchema>;
+
 export interface CheckpointDto {
   id: string;
   type: string;
@@ -32,6 +47,17 @@ export interface CheckpointDto {
   payload: Record<string, unknown>;
   priority: string;
   assignee_role: string | null;
+  created_by_id: string | null;
+  created_by_name: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  due_at: string | null;
+  is_overdue: boolean;
+  overdue_seconds: number;
+  escalation_level: number;
+  last_escalated_at: string | null;
+  last_escalated_by_name: string | null;
+  version: number;
   decided_by_name: string | null;
   decided_at: string | null;
   decision_reason: string | null;

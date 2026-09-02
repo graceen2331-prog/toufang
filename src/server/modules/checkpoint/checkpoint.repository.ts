@@ -10,6 +10,10 @@ export interface CheckpointListParams {
   status: string | null;
   type: string | null;
   campaignId?: string | null;
+  assignee?: string | null;
+  createdBy?: string | null;
+  overdue?: boolean;
+  priority?: string | null;
 }
 
 export interface CampaignCheckpointRefs {
@@ -148,6 +152,26 @@ async function collectCampaignCheckpointRefs(
 }
 
 export const checkpointRepository = {
+  async canUserDecide(ctx: TenantCtx, checkpoint: HumanCheckpoint, userId: string | null): Promise<boolean> {
+    if (!userId) return false;
+    if (checkpoint.assigneeId) return checkpoint.assigneeId === userId;
+    // 角色审批池的权限已由 API 的 approval:decide 门禁校验；内部工作流调用也保持向后兼容。
+    if (!checkpoint.assigneeRole) return true;
+    const membership = await prisma.membership.findFirst({
+      where: { tenantId: ctx.orgId, userId, status: "active", deletedAt: null },
+      include: { role: { select: { key: true, permissions: true } } },
+    });
+    if (!membership) return true;
+    const permissions = Array.isArray(membership.role.permissions)
+      ? (membership.role.permissions as unknown[]).map(String)
+      : [];
+    if (!permissions.includes("*") && !permissions.includes("approval:decide")) return false;
+    return !checkpoint.assigneeRole || checkpoint.assigneeRole === membership.role.key;
+  },
+
+  async canUserReceive(ctx: TenantCtx, checkpoint: HumanCheckpoint, userId: string): Promise<boolean> {
+    return this.canUserDecide(ctx, { ...checkpoint, assigneeId: null }, userId);
+  },
   async list(ctx: TenantCtx, params: CheckpointListParams): Promise<HumanCheckpoint[]> {
     const campaignWhere = params.campaignId
       ? buildCampaignCheckpointWhere(
@@ -161,6 +185,14 @@ export const checkpointRepository = {
         tenantId: ctx.orgId,
         ...(params.status ? { status: params.status } : {}),
         ...(params.type ? { type: params.type } : {}),
+        ...(params.priority ? { priority: params.priority } : {}),
+        ...(params.assignee === "me" && ctx.userId ? { assigneeId: ctx.userId } : {}),
+        ...(params.assignee === "unassigned" ? { assigneeId: null } : {}),
+        ...(params.assignee && !["me", "unassigned"].includes(params.assignee)
+          ? { assigneeId: params.assignee }
+          : {}),
+        ...(params.createdBy === "me" && ctx.userId ? { createdBy: ctx.userId } : {}),
+        ...(params.overdue === true ? { dueAt: { lt: new Date() }, status: "pending" } : {}),
         ...(params.cursor
           ? { id: params.order === "desc" ? { lt: params.cursor } : { gt: params.cursor } }
           : {}),
@@ -179,12 +211,39 @@ export const checkpointRepository = {
     return prisma.humanCheckpoint.findFirst({ where: { id, tenantId: ctx.orgId } });
   },
 
+  async listEvents(ctx: TenantCtx, checkpointId: string) {
+    return prisma.humanCheckpointEvent.findMany({
+      where: { tenantId: ctx.orgId, checkpointId },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+  },
+
   async create(
     ctx: TenantCtx,
     data: Omit<Prisma.HumanCheckpointUncheckedCreateInput, "tenantId">,
   ): Promise<HumanCheckpoint> {
-    return prisma.humanCheckpoint.create({
-      data: { ...data, tenantId: ctx.orgId, createdBy: ctx.userId ?? null },
+    return prisma.$transaction(async (tx) => {
+      const created = await tx.humanCheckpoint.create({
+        data: {
+          ...data,
+          tenantId: ctx.orgId,
+          createdBy: data.createdBy ?? ctx.userId ?? null,
+          dueAt: data.dueAt ?? new Date(Date.now() + dueHoursForPriority(data.priority ?? "normal") * 3600_000),
+        },
+      });
+      await tx.humanCheckpointEvent.create({
+        data: {
+          tenantId: ctx.orgId,
+          checkpointId: created.id,
+          eventType: "created",
+          actorId: ctx.userId ?? null,
+          toStatus: created.status,
+          toAssigneeId: created.assigneeId,
+          metadata: { priority: created.priority },
+        },
+      });
+      return created;
     });
   },
 
@@ -194,16 +253,77 @@ export const checkpointRepository = {
     id: string,
     status: "approved" | "rejected" | "changes_requested",
     reason: string | null,
+    expectedVersion?: number,
   ): Promise<boolean> {
-    const result = await prisma.humanCheckpoint.updateMany({
-      where: { id, tenantId: ctx.orgId, status: "pending" },
-      data: {
-        status,
-        decidedBy: ctx.userId ?? null,
-        decidedAt: new Date(),
-        decisionReason: reason,
-      },
+    return prisma.$transaction(async (tx) => {
+      const current = await tx.humanCheckpoint.findFirst({ where: { id, tenantId: ctx.orgId } });
+      if (!current || current.status !== "pending") return false;
+      const result = await tx.humanCheckpoint.updateMany({
+        where: {
+          id,
+          tenantId: ctx.orgId,
+          status: "pending",
+          ...(expectedVersion === undefined ? {} : { version: expectedVersion }),
+        },
+        data: {
+          status,
+          decidedBy: ctx.userId ?? null,
+          decidedAt: new Date(),
+          decisionReason: reason,
+          version: { increment: 1 },
+        },
+      });
+      if (result.count === 0) return false;
+      await tx.humanCheckpointEvent.create({
+        data: {
+          tenantId: ctx.orgId,
+          checkpointId: id,
+          eventType: "decided",
+          actorId: ctx.userId ?? null,
+          fromStatus: current.status,
+          toStatus: status,
+          fromAssigneeId: current.assigneeId,
+          reason,
+        },
+      });
+      return true;
     });
-    return result.count > 0;
+  },
+
+  async transfer(ctx: TenantCtx, id: string, toUserId: string, reason: string, expectedVersion?: number) {
+    return prisma.$transaction(async (tx) => {
+      const current = await tx.humanCheckpoint.findFirst({ where: { id, tenantId: ctx.orgId } });
+      if (!current || current.status !== "pending") return { kind: "not_pending" as const };
+      const updated = await tx.humanCheckpoint.updateMany({
+        where: { id, tenantId: ctx.orgId, status: "pending", ...(expectedVersion === undefined ? {} : { version: expectedVersion }) },
+        data: { assigneeId: toUserId, version: { increment: 1 } },
+      });
+      if (!updated.count) return { kind: "conflict" as const };
+      await tx.humanCheckpointEvent.create({
+        data: { tenantId: ctx.orgId, checkpointId: id, eventType: "reassigned", actorId: ctx.userId ?? null, fromAssigneeId: current.assigneeId, toAssigneeId: toUserId, reason },
+      });
+      return { kind: "transferred" as const };
+    });
+  },
+
+  async escalate(ctx: TenantCtx, id: string, reason: string, targetUserId?: string | null, expectedVersion?: number) {
+    return prisma.$transaction(async (tx) => {
+      const current = await tx.humanCheckpoint.findFirst({ where: { id, tenantId: ctx.orgId } });
+      if (!current || current.status !== "pending") return { kind: "not_pending" as const };
+      const nextPriority = current.priority === "urgent" ? "urgent" : current.priority === "high" ? "urgent" : "high";
+      const updated = await tx.humanCheckpoint.updateMany({
+        where: { id, tenantId: ctx.orgId, status: "pending", ...(expectedVersion === undefined ? {} : { version: expectedVersion }) },
+        data: { escalationLevel: { increment: 1 }, lastEscalatedAt: new Date(), lastEscalatedBy: ctx.userId ?? null, priority: nextPriority, ...(targetUserId ? { assigneeId: targetUserId } : {}), version: { increment: 1 } },
+      });
+      if (!updated.count) return { kind: "conflict" as const };
+      await tx.humanCheckpointEvent.create({
+        data: { tenantId: ctx.orgId, checkpointId: id, eventType: "escalated", actorId: ctx.userId ?? null, fromAssigneeId: current.assigneeId, toAssigneeId: targetUserId ?? current.assigneeId, reason, metadata: { priority: nextPriority } },
+      });
+      return { kind: "escalated" as const };
+    });
   },
 };
+
+function dueHoursForPriority(priority: string): number {
+  return priority === "urgent" ? 4 : priority === "high" ? 24 : priority === "low" ? 120 : 48;
+}

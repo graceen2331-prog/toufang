@@ -368,6 +368,7 @@ export async function decideReportCheckpoint(
   reportId: string,
   decision: "approved" | "rejected" | "changes_requested",
   reason: string | null,
+  expectedVersion?: number,
 ): Promise<void> {
   const result = await analyticsRepository.decideReportCheckpoint({
     ctx,
@@ -375,6 +376,7 @@ export async function decideReportCheckpoint(
     reportId,
     decision,
     reason,
+    ...(expectedVersion === undefined ? {} : { expectedVersion }),
   });
   if (result.kind === "not_pending") throw new ApiError("APPROVAL_ALREADY_DECIDED");
   if (result.kind === "report_conflict") {

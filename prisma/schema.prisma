@@ -1050,19 +1050,49 @@ model HumanCheckpoint {
   payload       Json      @default("{}") // 审批上下文（diff、金额、风险提示）
   priority      String    @default("normal") // low | normal | high | urgent
   assigneeRole  String?   @map("assignee_role") // 需要哪个角色审批
+  assigneeId    String?   @map("assignee_id") // 指定审批人；为空时进入角色审批池
+  dueAt         DateTime? @map("due_at")
+  escalationLevel Int     @default(0) @map("escalation_level")
+  lastEscalatedAt DateTime? @map("last_escalated_at")
+  lastEscalatedBy String? @map("last_escalated_by")
+  version       Int       @default(0)
   decidedBy     String?   @map("decided_by")
   decidedAt     DateTime? @map("decided_at")
   decisionReason String?  @map("decision_reason")
   decisionMetadata Json   @default("{}") @map("decision_metadata")
   createdAt     DateTime  @default(now()) @map("created_at")
   createdBy     String?   @map("created_by")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   workflowRun WorkflowRun? @relation(fields: [workflowRunId], references: [id])
 
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([tenantId, status, assigneeId, dueAt])
+  @@index([tenantId, status, dueAt])
+  @@index([tenantId, createdBy, status])
   @@index([entityType, entityId])
   @@map("human_checkpoints")
+}
+
+// 审批操作追加事件：转交、升级、决策均在同一事务内写入，便于审计与追责
+model HumanCheckpointEvent {
+  id              String    @id @default(uuid(7))
+  tenantId        String    @map("tenant_id")
+  checkpointId    String    @map("checkpoint_id")
+  eventType       String    @map("event_type") // created | assigned | reassigned | escalated | decided
+  actorId         String?   @map("actor_id")
+  fromStatus      String?   @map("from_status")
+  toStatus        String?   @map("to_status")
+  fromAssigneeId  String?   @map("from_assignee_id")
+  toAssigneeId    String?   @map("to_assignee_id")
+  reason          String?
+  metadata        Json      @default("{}")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, checkpointId, createdAt])
+  @@index([tenantId, eventType, createdAt])
+  @@map("human_checkpoint_events")
 }
 
 // 每次模型调用一行（token/成本记账）

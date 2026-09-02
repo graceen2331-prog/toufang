@@ -377,6 +377,7 @@ export const contentRepository = {
       category: "false_positive" | "evidence_verified" | "brand_authorized" | "other";
       acknowledged_finding_ids: string[];
     };
+    expectedVersion?: number;
   }) {
     return prisma.$transaction(async (tx) => {
       const checkpoint = await tx.humanCheckpoint.findFirst({
@@ -386,6 +387,7 @@ export const contentRepository = {
           type: "content",
           entityType: "content_asset",
           status: "pending",
+          ...(input.expectedVersion === undefined ? {} : { version: input.expectedVersion }),
         },
       });
       if (!checkpoint?.entityId) return { kind: "not_pending" as const };
@@ -457,16 +459,34 @@ export const contentRepository = {
             };
       const now = new Date();
       const checkpointUpdated = await tx.humanCheckpoint.updateMany({
-        where: { id: checkpoint.id, tenantId: input.ctx.orgId, status: "pending" },
+        where: {
+          id: checkpoint.id,
+          tenantId: input.ctx.orgId,
+          status: "pending",
+          ...(input.expectedVersion === undefined ? {} : { version: input.expectedVersion }),
+        },
         data: {
           status: input.decision,
           decidedBy: input.ctx.userId ?? null,
           decidedAt: now,
           decisionReason: input.reason,
           decisionMetadata,
+          version: { increment: 1 },
         },
       });
       if (checkpointUpdated.count !== 1) return { kind: "not_pending" as const };
+      await tx.humanCheckpointEvent.create({
+        data: {
+          tenantId: input.ctx.orgId,
+          checkpointId: checkpoint.id,
+          eventType: "decided",
+          actorId: input.ctx.userId ?? null,
+          fromStatus: "pending",
+          toStatus: input.decision,
+          fromAssigneeId: checkpoint.assigneeId,
+          reason: input.reason,
+        },
+      });
 
       const reviewUpdated = await tx.contentReview.updateMany({
         where: { id: review.id, tenantId: input.ctx.orgId, status: "reviewing" },

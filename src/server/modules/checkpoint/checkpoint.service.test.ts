@@ -73,7 +73,12 @@ describe("decideCheckpoint 外联审批联动", () => {
   it("批准 outreach_send 审批项时同步更新外联消息状态", async () => {
     const { decideCheckpoint } = await import("./checkpoint.service");
 
-    await decideCheckpoint({ orgId: "org-1", userId: "user-1" }, "checkpoint-1", "approved");
+    await decideCheckpoint(
+      { orgId: "org-1", userId: "user-1" },
+      "checkpoint-1",
+      "approved",
+      "已核对外联内容，批准发送",
+    );
 
     expect(onOutreachApprovalDecided).toHaveBeenCalledWith(
       { orgId: "org-1", userId: "user-1" },
@@ -103,14 +108,19 @@ describe("decideCheckpoint 正式报告原子审批", () => {
   it("交由报告领域事务同时决定审批与报告状态", async () => {
     const { decideCheckpoint } = await import("./checkpoint.service");
 
-    await decideCheckpoint({ orgId: "org-1", userId: "user-1" }, "checkpoint-1", "approved");
+    await decideCheckpoint(
+      { orgId: "org-1", userId: "user-1" },
+      "checkpoint-1",
+      "approved",
+      "已核对报告内容，批准发布",
+    );
 
     expect(decideReportCheckpoint).toHaveBeenCalledWith(
       { orgId: "org-1", userId: "user-1" },
       "checkpoint-1",
       "report-1",
       "approved",
-      null,
+      "已核对报告内容，批准发布",
     );
     expect(decide).not.toHaveBeenCalled();
   });

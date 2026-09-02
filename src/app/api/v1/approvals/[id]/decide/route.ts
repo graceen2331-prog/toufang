@@ -16,6 +16,7 @@ export const POST = createApiHandler({
       ctx.body.override,
       ctx.body.payment_confirmation,
       roleHasPermission(ctx.auth.permissions, "payment:approve"),
+      ctx.body.expected_version,
     );
     ctx.setAuditEntity("human_checkpoint", checkpoint.id, {
       decision: ctx.body.decision,

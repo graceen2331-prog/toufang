@@ -20,6 +20,10 @@ export const GET = createApiHandler({
         status: ctx.searchParams.get("status"),
         type: ctx.searchParams.get("type"),
         campaignId: ctx.searchParams.get("campaign_id"),
+        assignee: ctx.searchParams.get("assignee"),
+        createdBy: ctx.searchParams.get("created_by"),
+        overdue: ctx.searchParams.get("overdue") === "true" ? true : undefined,
+        priority: ctx.searchParams.get("priority"),
       },
     );
     return paginated(items, pagination);

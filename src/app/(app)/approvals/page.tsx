@@ -18,7 +18,7 @@ import { useCursorPagination, useUrlFilters } from "@/lib/list-state";
 import { CHECKPOINT_STATUS } from "@/shared/constants/status";
 import { CHECKPOINT_TYPE_LABELS } from "@/shared/schemas/checkpoint";
 
-const FILTER_DEFAULTS = { status: "pending", type: "" };
+const FILTER_DEFAULTS = { status: "pending", type: "", assignee: "", overdue: "" };
 
 export default function ApprovalsPage() {
   return (
@@ -35,6 +35,8 @@ function ApprovalsPageInner() {
   const { data, isLoading, isError, error, refetch } = useApprovals({
     status: filters.status === "all" ? undefined : filters.status,
     type: filters.type || undefined,
+    assignee: filters.assignee || undefined,
+    overdue: filters.overdue === "true" ? true : undefined,
     cursor: pagination.cursor,
   });
 
@@ -77,6 +79,18 @@ function ApprovalsPageInner() {
             label,
           }))}
         />
+        <FilterSelect
+          placeholder="处理范围"
+          value={filters.assignee}
+          onChange={(v) => { setFilter("assignee", v); pagination.resetPages(); }}
+          options={[{ value: "me", label: "待我处理" }, { value: "unassigned", label: "未分配" }]}
+        />
+        <FilterSelect
+          placeholder="时效"
+          value={filters.overdue}
+          onChange={(v) => { setFilter("overdue", v); pagination.resetPages(); }}
+          options={[{ value: "true", label: "已逾期" }]}
+        />
         {isFiltered && (
           <Button
             variant="ghost"
@@ -97,7 +111,7 @@ function ApprovalsPageInner() {
         error={error}
         onRetry={() => refetch()}
         isEmpty={data?.items.length === 0}
-        filtered={filters.type !== "" || filters.status !== "pending"}
+        filtered={filters.type !== "" || filters.status !== "pending" || filters.assignee !== "" || filters.overdue !== ""}
         emptyTitle="暂无待审批事项"
         emptyHint="AI 工作流触发审批后会出现在这里"
       >

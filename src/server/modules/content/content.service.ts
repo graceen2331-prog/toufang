@@ -429,6 +429,7 @@ export async function decideContentCheckpoint(
     decision: input.decision,
     reason: input.reason?.trim() || null,
     override: input.override,
+    ...(input.expected_version === undefined ? {} : { expectedVersion: input.expected_version }),
   });
   if (result.kind === "decided") return;
   if (result.kind === "blocking_findings") {
