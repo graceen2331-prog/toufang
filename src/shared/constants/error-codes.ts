@@ -17,6 +17,7 @@ export const ERROR_CODES = {
   AUTH_SESSION_EXPIRED: { status: 401, message: "登录已过期，请重新登录" },
   AUTH_ACCOUNT_DISABLED: { status: 403, message: "账号已被禁用" },
   AUTH_EMAIL_EXISTS: { status: 409, message: "该邮箱已注册" },
+  AUTH_RATE_LIMIT_UNAVAILABLE: { status: 503, message: "登录安全服务暂不可用，请稍后重试" },
 
   // 业务
   INVALID_STATUS_TRANSITION: { status: 409, message: "非法的状态变更" },

@@ -185,6 +185,7 @@ try {
     ...process.env,
     MODEL_PROVIDER: process.env.MODEL_PROVIDER ?? "fake",
     E2E_BASE_URL: baseURL,
+    APP_ORIGIN: baseURL,
     E2E_MANAGED_SERVER: "1",
   };
 

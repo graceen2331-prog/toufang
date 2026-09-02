@@ -124,11 +124,13 @@ model Session {
   expiresAt   DateTime @map("expires_at")
   ip          String?
   userAgent   String?  @map("user_agent")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
   createdAt   DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
+  @@index([userId, expiresAt])
   @@map("sessions")
 }
 

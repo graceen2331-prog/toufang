@@ -8,6 +8,7 @@ export class ApiError extends Error {
     public code: ErrorCode,
     message?: string,
     public details?: unknown,
+    public responseHeaders?: Record<string, string>,
   ) {
     super(message ?? ERROR_CODES[code].message);
     this.name = "ApiError";
@@ -58,6 +59,7 @@ export function fail(
   code: ErrorCode,
   message?: string,
   details?: unknown,
+  headers?: Record<string, string>,
 ): NextResponse {
   return NextResponse.json(
     {
@@ -69,6 +71,6 @@ export function fail(
       },
       meta: meta(requestId),
     },
-    { status: ERROR_CODES[code].status },
+    { status: ERROR_CODES[code].status, headers },
   );
 }

@@ -7,6 +7,7 @@ import { getAuthContext, requirePermission, type AuthContext } from "@/server/au
 import { writeAuditLog } from "@/server/modules/audit/audit.service";
 import { InvalidTransitionError } from "@/shared/constants/status";
 import type { Permission } from "@/shared/constants/permissions";
+import { validateMutationOrigin } from "@/server/auth/request-origin";
 
 const PAGINATED = Symbol("paginated");
 
@@ -61,6 +62,7 @@ export function createApiHandler<TBody = unknown>(options: CreateHandlerOptions<
   return async (req: NextRequest, routeCtx?: RouteContext): Promise<NextResponse> => {
     const requestId = req.headers.get("x-request-id") ?? randomUUID();
     try {
+      validateMutationOrigin(req);
       // 认证与权限
       let auth: AuthContext | null = null;
       if (options.auth !== false) {
@@ -122,7 +124,7 @@ export function createApiHandler<TBody = unknown>(options: CreateHandlerOptions<
 
 function mapError(requestId: string, err: unknown): NextResponse {
   if (err instanceof ApiError) {
-    return fail(requestId, err.code, err.message, err.details);
+    return fail(requestId, err.code, err.message, err.details, err.responseHeaders);
   }
   if (err instanceof ZodError) {
     return fail(

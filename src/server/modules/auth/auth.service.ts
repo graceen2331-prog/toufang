@@ -6,6 +6,14 @@ import { ApiError } from "@/server/api/envelope";
 import { writeAuditLog } from "@/server/modules/audit/audit.service";
 import type { AuthContext } from "@/server/auth/context";
 import type { MeDto } from "@/shared/schemas/auth";
+import {
+  beginLoginAttempt,
+  recordLoginFailure,
+  recordLoginSuccess,
+} from "@/server/auth/login-protection";
+
+const DUMMY_PASSWORD_HASH =
+  "$argon2id$v=19$m=19456,t=2,p=1$amlqDI4RGskKhrEYpbcBRA$K/eslAHoitLdYfFDAFw53phwBRXTQu9Tx6QNIN2PFVw";
 
 export async function login(input: {
   email: string;
@@ -13,13 +21,18 @@ export async function login(input: {
   ip?: string | null;
   userAgent?: string | null;
 }): Promise<void> {
+  const email = input.email.normalize("NFKC").trim().toLowerCase();
+  const limiterInput = { email, clientIp: input.ip ?? null };
+  await beginLoginAttempt(limiterInput);
   const user = await prisma.user.findFirst({
-    where: { email: input.email.toLowerCase(), deletedAt: null },
+    where: { email, deletedAt: null },
   });
-  if (!user || !(await verifyPassword(user.passwordHash, input.password))) {
+  const passwordValid = await verifyPassword(user?.passwordHash ?? DUMMY_PASSWORD_HASH, input.password);
+  if (!user || !passwordValid || user.status !== "active") {
+    await recordLoginFailure(limiterInput);
     throw new ApiError("AUTH_INVALID_CREDENTIALS");
   }
-  if (user.status !== "active") throw new ApiError("AUTH_ACCOUNT_DISABLED");
+  await recordLoginSuccess(limiterInput);
 
   const firstMembership = await prisma.membership.findFirst({
     where: { userId: user.id, status: "active", deletedAt: null },

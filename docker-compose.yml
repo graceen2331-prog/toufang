@@ -1,3 +1,4 @@
+# 仅用于本地开发；生产环境应使用托管数据库/Redis 或独立的受限网络编排。
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -7,7 +8,7 @@ services:
       POSTGRES_PASSWORD: toufang
       POSTGRES_DB: toufang
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +21,7 @@ services:
     image: redis:7-alpine
     container_name: toufang2-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:

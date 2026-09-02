@@ -1,6 +1,7 @@
 // BullMQ Worker 进程入口
 // 启动：pnpm dev:worker（tsx 需带 --conditions=react-server 以兼容 server-only 包）
 import "dotenv/config";
+import { assertProductionEnvironment } from "@/server/config/env";
 import { Worker } from "bullmq";
 import {
   QUEUE_NAMES,
@@ -63,6 +64,7 @@ async function main() {
   process.on("SIGTERM", shutdown);
 }
 
+assertProductionEnvironment();
 main().catch((err) => {
   console.error("[worker] 启动失败", err);
   process.exit(1);

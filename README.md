@@ -32,6 +32,18 @@ pnpm dev          # Next.js 应用 → http://localhost:3000
 pnpm dev:worker   # 后台 Worker（工作流 / RAG / 通知）
 ```
 
+## 生产安全配置
+
+`docker-compose.yml` 只服务本地开发，数据库与 Redis 端口仅绑定 `127.0.0.1`，不能作为生产编排直接部署。生产环境启动前会强制校验以下配置，缺失或仍使用示例密钥时应用/Worker 会拒绝启动：
+
+- `APP_ORIGIN`：唯一的 HTTPS 应用来源，例如 `https://kol.example.com`。
+- `DATA_ENCRYPTION_KEY`、`PAYMENT_FINGERPRINT_KEY`、`AUTH_RATE_LIMIT_HMAC_KEY`：分别生成、至少 32 字节且不得复用。
+- `AUTH_CLIENT_IP_HEADER`：由可信反向代理覆盖的单值客户端 IP 头（例如 `x-real-ip`）；应用端口必须禁止绕过该代理直连。
+- `REDIS_URL`：生产登录限流采用 Redis，Redis 不可用时登录会安全地拒绝并返回 503。
+- `SESSION_ABSOLUTE_TTL_HOURS` / `SESSION_IDLE_TTL_HOURS`：默认分别为 12 小时和 2 小时，绝对期限生产上限为 24 小时。
+
+生产环境不得启用 `ENABLE_DEMO_LOGIN`。浏览器变更请求会校验 `Origin` / Fetch Metadata，因此反向代理必须保留这些标准请求头，并确保外部来源与 `APP_ORIGIN` 完全一致。
+
 ## 常用脚本
 
 | 命令 | 说明 |

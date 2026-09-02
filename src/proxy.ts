@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { SESSION_COOKIE } from "@/shared/auth/session";
 
 const PUBLIC_PATHS = ["/login", "/api/v1/auth/login", "/api/v1/auth/logout"];
-const SESSION_COOKIE = "tf_session";
 
 /**
  * 粗粒度访问控制：无 session cookie 的页面请求重定向到 /login。
