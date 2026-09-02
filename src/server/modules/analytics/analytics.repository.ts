@@ -22,6 +22,7 @@ export interface InsightListParams {
   order: "asc" | "desc";
   campaignId: string | null;
   status: string | null;
+  globalOnly?: boolean;
 }
 
 export interface ReportListParams {
@@ -32,7 +33,49 @@ export interface ReportListParams {
   status: string | null;
 }
 
-export type MetricWithLabel = PerformanceMetric & { label: string };
+export type MetricWithLabel = PerformanceMetric & {
+  label: string;
+  campaignId: string | null;
+  campaignCurrency: string | null;
+};
+
+async function findMetricEntityContext(
+  ctx: TenantCtx,
+  entityType: string,
+  entityId: string,
+): Promise<{ campaignId: string; currency: string } | null> {
+  if (entityType === "campaign") {
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: entityId, tenantId: ctx.orgId, deletedAt: null },
+      select: { id: true, currency: true },
+    });
+    return campaign ? { campaignId: campaign.id, currency: campaign.currency } : null;
+  }
+  if (entityType === "campaign_creator") {
+    const campaignCreator = await prisma.campaignCreator.findFirst({
+      where: { id: entityId, tenantId: ctx.orgId, deletedAt: null },
+      include: { campaign: { select: { id: true, currency: true } } },
+    });
+    return campaignCreator
+      ? { campaignId: campaignCreator.campaign.id, currency: campaignCreator.campaign.currency }
+      : null;
+  }
+  if (entityType === "content_asset") {
+    const asset = await prisma.contentAsset.findFirst({
+      where: { id: entityId, tenantId: ctx.orgId, deletedAt: null },
+      select: { campaignCreatorId: true },
+    });
+    if (!asset) return null;
+    const campaignCreator = await prisma.campaignCreator.findFirst({
+      where: { id: asset.campaignCreatorId, tenantId: ctx.orgId, deletedAt: null },
+      include: { campaign: { select: { id: true, currency: true } } },
+    });
+    return campaignCreator
+      ? { campaignId: campaignCreator.campaign.id, currency: campaignCreator.campaign.currency }
+      : null;
+  }
+  return null;
+}
 
 const reportRelations = {
   supersededBy: { select: { id: true } },
@@ -65,8 +108,24 @@ export const analyticsRepository = {
       metricDate: Date;
       metrics: Record<string, number>;
       source: string;
+      currency?: string | null;
+      attributionWindowDays?: number | null;
+      attributionModel?: string | null;
+      sourceRecordId?: string | null;
+      sourceObservedAt?: Date | null;
+      metricSchemaVersion?: number;
     },
-  ): Promise<PerformanceMetric> {
+  ): Promise<PerformanceMetric | null> {
+    const context = await findMetricEntityContext(ctx, data.entityType, data.entityId);
+    if (!context) return null;
+    const semanticData = {
+      currency: data.currency ?? context.currency,
+      attributionWindowDays: data.attributionWindowDays ?? null,
+      attributionModel: data.attributionModel ?? null,
+      sourceRecordId: data.sourceRecordId ?? null,
+      sourceObservedAt: data.sourceObservedAt ?? null,
+      metricSchemaVersion: data.metricSchemaVersion ?? 2,
+    };
     return prisma.performanceMetric.upsert({
       where: {
         tenantId_entityType_entityId_platform_metricDate: {
@@ -80,6 +139,7 @@ export const analyticsRepository = {
       update: {
         metrics: data.metrics,
         source: data.source,
+        ...semanticData,
       },
       create: {
         tenantId: ctx.orgId,
@@ -89,6 +149,7 @@ export const analyticsRepository = {
         metricDate: data.metricDate,
         metrics: data.metrics,
         source: data.source,
+        ...semanticData,
         createdBy: ctx.userId ?? null,
       },
     });
@@ -152,46 +213,72 @@ export const analyticsRepository = {
 
   async attachMetricLabels(ctx: TenantCtx, rows: PerformanceMetric[]): Promise<MetricWithLabel[]> {
     const campaignIds = rows.filter((row) => row.entityType === "campaign").map((row) => row.entityId);
-    const campaignCreatorIds = rows
+    const metricCampaignCreatorIds = rows
       .filter((row) => row.entityType === "campaign_creator")
       .map((row) => row.entityId);
     const contentAssetIds = rows.filter((row) => row.entityType === "content_asset").map((row) => row.entityId);
 
-    const [campaigns, campaignCreators, contentAssets] = await Promise.all([
+    const [campaigns, contentAssets] = await Promise.all([
       campaignIds.length
         ? prisma.campaign.findMany({
             where: { tenantId: ctx.orgId, id: { in: campaignIds }, deletedAt: null },
-            select: { id: true, name: true },
-          })
-        : [],
-      campaignCreatorIds.length
-        ? prisma.campaignCreator.findMany({
-            where: { tenantId: ctx.orgId, id: { in: campaignCreatorIds }, deletedAt: null },
-            include: { creator: { select: { displayName: true } } },
+            select: { id: true, name: true, currency: true },
           })
         : [],
       contentAssetIds.length
         ? prisma.contentAsset.findMany({
             where: { tenantId: ctx.orgId, id: { in: contentAssetIds }, deletedAt: null },
-            select: { id: true, title: true, platform: true },
+            select: { id: true, title: true, platform: true, campaignCreatorId: true },
           })
         : [],
     ]);
 
+    const campaignCreatorIds = [
+      ...new Set([
+        ...metricCampaignCreatorIds,
+        ...contentAssets.map((asset) => asset.campaignCreatorId),
+      ]),
+    ];
+    const campaignCreators = campaignCreatorIds.length
+      ? await prisma.campaignCreator.findMany({
+          where: { tenantId: ctx.orgId, id: { in: campaignCreatorIds }, deletedAt: null },
+          include: {
+            creator: { select: { displayName: true } },
+            campaign: { select: { id: true, currency: true } },
+          },
+        })
+      : [];
+
     const campaignLabels = new Map(campaigns.map((campaign) => [campaign.id, campaign.name]));
     const creatorLabels = new Map(campaignCreators.map((cc) => [cc.id, cc.creator.displayName]));
+    const creatorCampaigns = new Map(
+      campaignCreators.map((cc) => [cc.id, { id: cc.campaign.id, currency: cc.campaign.currency }]),
+    );
     const contentLabels = new Map(
       contentAssets.map((asset) => [asset.id, asset.title ?? `${asset.platform ?? "内容"} ${asset.id.slice(-6)}`]),
     );
-    return rows.map((row) => ({
-      ...row,
-      label:
-        row.entityType === "campaign"
-          ? (campaignLabels.get(row.entityId) ?? row.entityId)
-          : row.entityType === "campaign_creator"
-            ? (creatorLabels.get(row.entityId) ?? row.entityId)
-            : (contentLabels.get(row.entityId) ?? row.entityId),
-    }));
+    const contentCampaigns = new Map(
+      contentAssets.map((asset) => [asset.id, creatorCampaigns.get(asset.campaignCreatorId) ?? null]),
+    );
+    const campaignCurrencies = new Map(campaigns.map((campaign) => [campaign.id, campaign.currency]));
+    return rows.map((row) => {
+      const context = row.entityType === "campaign"
+        ? { id: row.entityId, currency: campaignCurrencies.get(row.entityId) ?? null }
+        : row.entityType === "campaign_creator"
+          ? (creatorCampaigns.get(row.entityId) ?? null)
+          : (contentCampaigns.get(row.entityId) ?? null);
+      return {
+        ...row,
+        label:
+          row.entityType === "campaign"
+            ? (campaignLabels.get(row.entityId) ?? row.entityId)
+            : row.entityType === "campaign_creator"
+              ? (creatorLabels.get(row.entityId) ?? row.entityId)
+              : (contentLabels.get(row.entityId) ?? row.entityId),
+        campaignId: context?.id ?? null,
+        campaignCurrency: context?.currency ?? null,
+      };
+    });
   },
 
   async listInsights(ctx: TenantCtx, params: InsightListParams): Promise<Insight[]> {
@@ -200,6 +287,7 @@ export const analyticsRepository = {
         tenantId: ctx.orgId,
         deletedAt: null,
         ...(params.campaignId ? { campaignId: params.campaignId } : {}),
+        ...(!params.campaignId && params.globalOnly ? { campaignId: null } : {}),
         ...(params.status ? { status: params.status } : {}),
         ...(params.cursor
           ? { id: params.order === "desc" ? { lt: params.cursor } : { gt: params.cursor } }

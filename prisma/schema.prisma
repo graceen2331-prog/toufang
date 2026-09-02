@@ -843,18 +843,25 @@ model PaymentRecord {
 // 8. 分析（3）
 // ============================================================
 
-// 横切：统一指标表（append-only）
+// 横切：统一日粒度指标快照（同实体/平台/日期幂等更新）
 model PerformanceMetric {
-  id         String   @id @default(uuid(7))
-  tenantId   String   @map("tenant_id")
-  entityType String   @map("entity_type") // campaign | campaign_creator | content_asset
-  entityId   String   @map("entity_id")
-  platform   String?
-  metricDate DateTime @map("metric_date") @db.Date
-  metrics    Json // {impressions, views, likes, comments, shares, clicks, conversions, revenue_cents, cost_cents}
-  source     String   @default("manual") // manual | import | integration
-  createdAt  DateTime @default(now()) @map("created_at")
-  createdBy  String?  @map("created_by")
+  id                    String   @id @default(uuid(7))
+  tenantId              String   @map("tenant_id")
+  entityType            String   @map("entity_type") // campaign | campaign_creator | content_asset
+  entityId              String   @map("entity_id")
+  platform              String?
+  metricDate            DateTime @map("metric_date") @db.Date
+  metrics               Json // 缺失 key 表示未提供；数值 0 表示明确观测为 0
+  source                String   @default("manual") // manual | import | integration
+  currency              String?
+  attributionWindowDays Int?     @map("attribution_window_days")
+  attributionModel      String?  @map("attribution_model")
+  sourceRecordId        String?  @map("source_record_id")
+  sourceObservedAt      DateTime? @map("source_observed_at")
+  ingestedAt            DateTime @default(now()) @updatedAt @map("ingested_at")
+  metricSchemaVersion   Int      @default(1) @map("metric_schema_version")
+  createdAt             DateTime @default(now()) @map("created_at")
+  createdBy             String?  @map("created_by")
 
   @@unique([tenantId, entityType, entityId, platform, metricDate])
   @@index([tenantId])

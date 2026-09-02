@@ -31,52 +31,13 @@ import {
   type ReportListParams,
   type ReportWithRelations,
 } from "./analytics.repository";
+import {
+  aggregateMetricSemantics,
+  asMetricMap,
+  rankPerformers,
+} from "./metric-semantics";
 
-const METRIC_KEYS = [
-  "impressions",
-  "views",
-  "likes",
-  "comments",
-  "shares",
-  "clicks",
-  "conversions",
-  "revenue_cents",
-  "cost_cents",
-] as const;
-
-function asMetricMap(value: unknown): Record<string, number> {
-  if (!value || typeof value !== "object") return {};
-  const result: Record<string, number> = {};
-  for (const [key, raw] of Object.entries(value)) {
-    if (typeof raw === "number" && Number.isFinite(raw)) result[key] = raw;
-  }
-  return result;
-}
-
-export function sumMetricRows(rows: Array<{ metrics: unknown }>): Record<string, number> {
-  const totals: Record<string, number> = Object.fromEntries(METRIC_KEYS.map((key) => [key, 0]));
-  for (const row of rows) {
-    const metrics = asMetricMap(row.metrics);
-    for (const key of METRIC_KEYS) totals[key] = (totals[key] ?? 0) + (metrics[key] ?? 0);
-  }
-  return totals;
-}
-
-export function calculateKpis(totals: Record<string, number>): AnalyticsOverviewDto["kpis"] {
-  const engagements = (totals.likes ?? 0) + (totals.comments ?? 0) + (totals.shares ?? 0);
-  const impressions = totals.impressions ?? 0;
-  const clicks = totals.clicks ?? 0;
-  const conversions = totals.conversions ?? 0;
-  const revenue = totals.revenue_cents ?? 0;
-  const cost = totals.cost_cents ?? 0;
-  return {
-    engagement_rate: impressions > 0 ? engagements / impressions : null,
-    ctr: impressions > 0 ? clicks / impressions : null,
-    conversion_rate: clicks > 0 ? conversions / clicks : null,
-    roi: cost > 0 ? revenue / cost : null,
-    cpa_cents: conversions > 0 ? Math.round(cost / conversions) : null,
-  };
-}
+export { calculateKpis, rankPerformers, sumMetricRows } from "./metric-semantics";
 
 function metricToDto(metric: PerformanceMetric): MetricDto {
   return {
@@ -87,6 +48,13 @@ function metricToDto(metric: PerformanceMetric): MetricDto {
     metric_date: metric.metricDate.toISOString().slice(0, 10),
     metrics: asMetricMap(metric.metrics),
     source: metric.source,
+    currency: metric.currency,
+    attribution_window_days: metric.attributionWindowDays,
+    attribution_model: metric.attributionModel,
+    source_record_id: metric.sourceRecordId,
+    source_observed_at: metric.sourceObservedAt?.toISOString() ?? null,
+    ingested_at: metric.ingestedAt.toISOString(),
+    metric_schema_version: metric.metricSchemaVersion,
     created_at: metric.createdAt.toISOString(),
   };
 }
@@ -167,85 +135,30 @@ function workflowResponse(run: WorkflowRun): StartWorkflowResponseDto {
 }
 
 function buildSeries(rows: MetricWithLabel[]): AnalyticsOverviewDto["series"] {
-  type SeriesBucket = {
-    views: number;
-    engagements: number;
-    conversions: number;
-    revenue_cents: number;
-  };
-  const byDate = new Map<string, SeriesBucket>();
+  const byDate = new Map<string, MetricWithLabel[]>();
   for (const row of rows) {
     const key = row.metricDate.toISOString().slice(0, 10);
-    const bucket = byDate.get(key) ?? {
-      views: 0,
-      engagements: 0,
-      conversions: 0,
-      revenue_cents: 0,
-    };
-    const metrics = asMetricMap(row.metrics);
-    bucket.views += metrics.views ?? 0;
-    bucket.engagements += (metrics.likes ?? 0) + (metrics.comments ?? 0) + (metrics.shares ?? 0);
-    bucket.conversions += metrics.conversions ?? 0;
-    bucket.revenue_cents += metrics.revenue_cents ?? 0;
+    const bucket = byDate.get(key) ?? [];
+    bucket.push(row);
     byDate.set(key, bucket);
   }
   return [...byDate.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, metrics]) => ({ date, ...metrics }));
-}
-
-export function rankPerformers(
-  rows: Array<Pick<MetricWithLabel, "entityType" | "entityId" | "label" | "metrics">>,
-): {
-  top: AnalyticsOverviewDto["top_performers"];
-  low: AnalyticsOverviewDto["low_performers"];
-} {
-  const byEntity = new Map<
-    string,
-    { entityType: string; entityId: string; label: string; metrics: Record<string, number> }
-  >();
-  for (const row of rows) {
-    if (row.entityType === "campaign") continue;
-    const key = `${row.entityType}:${row.entityId}`;
-    const bucket = byEntity.get(key) ?? {
-      entityType: row.entityType,
-      entityId: row.entityId,
-      label: row.label,
-      metrics: {},
-    };
-    const metrics = asMetricMap(row.metrics);
-    for (const metricKey of METRIC_KEYS) {
-      bucket.metrics[metricKey] = (bucket.metrics[metricKey] ?? 0) + (metrics[metricKey] ?? 0);
-    }
-    byEntity.set(key, bucket);
-  }
-  const ranked = [...byEntity.values()]
-    .map((item) => ({
-      entity_id: item.entityId,
-      entity_type: item.entityType,
-      label: item.label,
-      score:
-        (item.metrics.views ?? 0) +
-        (item.metrics.likes ?? 0) * 5 +
-        (item.metrics.comments ?? 0) * 8 +
-        (item.metrics.shares ?? 0) * 10 +
-        (item.metrics.conversions ?? 0) * 50,
-      metrics: item.metrics,
-    }))
-    .sort((a, b) => b.score - a.score);
-  const topCount = Math.min(5, Math.ceil(ranked.length / 2));
-  return {
-    top: ranked.slice(0, topCount),
-    low: ranked.slice(topCount).slice(-5).reverse(),
-  };
-}
-
-function dataQualityNotes(rows: MetricWithLabel[], totals: Record<string, number>): string[] {
-  const notes: string[] = [];
-  if (rows.length === 0) notes.push("当前筛选范围内没有指标数据。");
-  if ((totals.revenue_cents ?? 0) === 0) notes.push("缺少收入字段，ROI 暂不可完整判断。");
-  if ((totals.cost_cents ?? 0) === 0) notes.push("缺少成本字段，CPA/ROI 仅可作为方向参考。");
-  return notes;
+    .map(([date, dateRows]) => {
+      const semantic = aggregateMetricSemantics(dateRows);
+      return {
+        date,
+        views: semantic.totals.views ?? null,
+        engagements:
+          semantic.totals.likes === undefined ||
+          semantic.totals.comments === undefined ||
+          semantic.totals.shares === undefined
+            ? null
+            : semantic.totals.likes + semantic.totals.comments + semantic.totals.shares,
+        conversions: semantic.totals.conversions ?? null,
+        revenue_cents: semantic.totals.revenue_cents ?? null,
+      };
+    });
 }
 
 export async function upsertMetric(ctx: TenantCtx, input: MetricUpsertInput): Promise<MetricDto> {
@@ -256,7 +169,14 @@ export async function upsertMetric(ctx: TenantCtx, input: MetricUpsertInput): Pr
     metricDate: parseDate(input.metric_date)!,
     metrics: input.metrics,
     source: input.source,
+    currency: input.currency ?? null,
+    attributionWindowDays: input.attribution_window_days ?? null,
+    attributionModel: input.attribution_model ?? null,
+    sourceRecordId: input.source_record_id ?? null,
+    sourceObservedAt: input.source_observed_at ? new Date(input.source_observed_at) : null,
+    metricSchemaVersion: input.metric_schema_version,
   });
+  if (!metric) throw new ApiError("RESOURCE_NOT_FOUND", "指标关联的业务对象不存在");
   return metricToDto(metric);
 }
 
@@ -269,7 +189,7 @@ export async function getAnalyticsOverview(
     dateFrom: parseDate(params.dateFrom),
     dateTo: parseDate(params.dateTo),
   };
-  const [rows, insightPage] = await Promise.all([
+  const [rows, insightPage, campaign] = await Promise.all([
     analyticsRepository.listMetrics(ctx, query),
     analyticsRepository.listInsights(ctx, {
       limit: 20,
@@ -277,20 +197,36 @@ export async function getAnalyticsOverview(
       order: "desc",
       campaignId: query.campaignId,
       status: "open",
+      globalOnly: !query.campaignId,
     }),
+    query.campaignId ? analyticsRepository.getCampaign(ctx, query.campaignId) : Promise.resolve(null),
   ]);
-  const totals = sumMetricRows(rows);
+  if (query.campaignId && !campaign) throw new ApiError("RESOURCE_NOT_FOUND", "Campaign 不存在");
+  const semantic = aggregateMetricSemantics(rows);
   const ranked = rankPerformers(rows);
+  const dates = rows.map((row) => row.metricDate.toISOString().slice(0, 10)).sort();
   return {
     campaign_id: query.campaignId,
     date_from: params.dateFrom ?? null,
     date_to: params.dateTo ?? null,
-    totals,
-    kpis: calculateKpis(totals),
+    scope: {
+      requested_date_from: params.dateFrom ?? null,
+      requested_date_to: params.dateTo ?? null,
+      actual_date_from: dates[0] ?? null,
+      actual_date_to: dates.at(-1) ?? null,
+      label: campaign ? `Campaign：${campaign.name}` : "全部 Campaign",
+    },
+    totals: semantic.totals,
+    kpis: semantic.kpis,
+    kpi_details: semantic.kpiDetails,
+    financial_context: semantic.financialContext,
+    freshness: semantic.freshness,
     series: buildSeries(rows),
     top_performers: ranked.top,
     low_performers: ranked.low,
-    data_quality_notes: dataQualityNotes(rows, totals),
+    ranking_groups: ranked.groups,
+    data_quality_issues: semantic.issues,
+    data_quality_notes: semantic.issues.map((item) => item.message),
     insights: insightPage.slice(0, 8).map(insightToDto),
   };
 }

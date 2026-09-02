@@ -53,13 +53,15 @@ test.describe("W7 内容审核与数据分析", () => {
     await expect(page.getByText("已过审").first()).toBeVisible({ timeout: 30_000 });
   });
 
-  test("分析页展示 KPI、趋势图和 AI Insights", async ({ page }) => {
+  test("分析页展示可解释 KPI，并隔离全局与 Campaign 洞察", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto("/analytics");
     await expect(page.getByText("曝光").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("ROAS（收入/成本）")).toBeVisible();
+    await expect(page.getByText(/单一聚合层消重/)).toBeVisible();
     await expect(page.getByText("趋势")).toBeVisible();
-    await expect(page.getByText("AI Insights")).toBeVisible();
-    await expect(page.getByText(/缓解措施：|建议负责人：/).first()).toBeVisible();
+    await expect(page.getByText("AI 洞察", { exact: true })).toBeVisible();
+    await expect(page.getByText("暂无打开状态的洞察。")).toBeVisible();
   });
 
   test("已导出报告保持只读，并可派生新版本", async ({ page }) => {

@@ -99,6 +99,8 @@ export function ContentPublishPanel({ asset }: { asset: ContentAssetDto | null }
                     impressions: Math.max(views * 3, views),
                   },
                   source: "manual",
+                  source_observed_at: `${metricDate}T23:59:59.000Z`,
+                  metric_schema_version: 2,
                 })
               }
             >

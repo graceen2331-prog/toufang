@@ -121,8 +121,30 @@ async function upsertMetric(
         metricDate,
       },
     },
-    update: { metrics, source: "import" },
-    create: { tenantId, entityType, entityId, platform, metricDate, metrics, source: "import", createdBy },
+    update: {
+      metrics,
+      source: "import",
+      currency: "CNY",
+      attributionWindowDays: 7,
+      attributionModel: "last_click",
+      sourceObservedAt: metricDate,
+      metricSchemaVersion: 2,
+    },
+    create: {
+      tenantId,
+      entityType,
+      entityId,
+      platform,
+      metricDate,
+      metrics,
+      source: "import",
+      currency: "CNY",
+      attributionWindowDays: 7,
+      attributionModel: "last_click",
+      sourceObservedAt: metricDate,
+      metricSchemaVersion: 2,
+      createdBy,
+    },
   });
 }
 
@@ -203,6 +225,7 @@ export async function seedContentAnalytics(
 
     for (const [index, asset] of assets.entries()) {
       await upsertMetric(prisma, tenantId, "content_asset", asset.id, asset.platform ?? "douyin", metricDate, {
+        impressions: 6200 + growth * (430 - index * 50),
         views: 2800 + growth * (220 - index * 35),
         likes: 90 + growth * (8 - index),
         comments: 12 + growth,

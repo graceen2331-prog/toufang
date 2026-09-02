@@ -3,13 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const upsertMetricMock = vi.fn();
 const findReportMock = vi.fn();
 const updateReportMock = vi.fn();
+const listMetricsMock = vi.fn();
+const listInsightsMock = vi.fn();
+const getCampaignMock = vi.fn();
 
 vi.mock("./analytics.repository", () => ({
   analyticsRepository: {
     upsertMetric: upsertMetricMock,
-    getCampaign: vi.fn(),
-    listMetrics: vi.fn(),
-    listInsights: vi.fn(),
+    getCampaign: getCampaignMock,
+    listMetrics: listMetricsMock,
+    listInsights: listInsightsMock,
     listReports: vi.fn(),
     findReport: findReportMock,
     updateDraftReport: updateReportMock,
@@ -40,9 +43,10 @@ describe("analytics 指标计算", () => {
     const totals = sumMetricRows([{ metrics: { impressions: 1000, views: 600, likes: 50 } }]);
 
     expect(calculateKpis(totals)).toMatchObject({
-      ctr: 0,
+      ctr: null,
       conversion_rate: null,
       roi: null,
+      roas: null,
       cpa_cents: null,
     });
   });
@@ -56,6 +60,13 @@ describe("analytics 指标计算", () => {
       metricDate: new Date("2026-07-04T00:00:00.000Z"),
       metrics: { views: 100 },
       source: "manual",
+      currency: "CNY",
+      attributionWindowDays: null,
+      attributionModel: null,
+      sourceRecordId: null,
+      sourceObservedAt: null,
+      ingestedAt: new Date("2026-07-04T00:00:00.000Z"),
+      metricSchemaVersion: 2,
       createdAt: new Date("2026-07-04T00:00:00.000Z"),
     });
     const { upsertMetric } = await import("./analytics.service");
@@ -69,6 +80,7 @@ describe("analytics 指标计算", () => {
         metric_date: "2026-07-04",
         metrics: { views: 100 },
         source: "manual",
+        metric_schema_version: 2,
       },
     );
 
@@ -80,11 +92,21 @@ describe("analytics 指标计算", () => {
 
   it("高表现与需关注列表不会重复展示同一对象", async () => {
     const { rankPerformers } = await import("./analytics.service");
-    const rows = [100, 80, 60, 40].map((views, index) => ({
+    const rows = [100, 80, 60, 40].map((engagements, index) => ({
       entityType: "content_asset",
       entityId: `asset-${index}`,
       label: `内容 ${index}`,
-      metrics: { views },
+      campaignId: "campaign-1",
+      campaignCurrency: "CNY",
+      platform: "douyin",
+      metricDate: new Date("2026-07-04T00:00:00.000Z"),
+      metrics: { impressions: 1000, likes: engagements, comments: 0, shares: 0 },
+      source: "manual",
+      currency: "CNY",
+      attributionWindowDays: null,
+      attributionModel: null,
+      sourceObservedAt: null,
+      ingestedAt: new Date("2026-07-04T00:00:00.000Z"),
     }));
 
     const result = rankPerformers(rows);
@@ -93,6 +115,37 @@ describe("analytics 指标计算", () => {
     expect(result.top).toHaveLength(2);
     expect(result.low).toHaveLength(2);
     expect(result.low.every((item) => !topIds.has(item.entity_id))).toBe(true);
+  });
+
+  it("全局总览只查询租户级洞察，不混入单 Campaign 结论", async () => {
+    listMetricsMock.mockResolvedValue([]);
+    listInsightsMock.mockResolvedValue([]);
+    const { getAnalyticsOverview } = await import("./analytics.service");
+
+    const result = await getAnalyticsOverview(
+      { orgId: "org-1", userId: "user-1" },
+      {},
+    );
+
+    expect(listInsightsMock).toHaveBeenCalledWith(
+      { orgId: "org-1", userId: "user-1" },
+      expect.objectContaining({ campaignId: null, globalOnly: true }),
+    );
+    expect(result.scope.label).toBe("全部 Campaign");
+  });
+
+  it("拒绝访问当前租户不存在的 Campaign 指标范围", async () => {
+    listMetricsMock.mockResolvedValue([]);
+    listInsightsMock.mockResolvedValue([]);
+    getCampaignMock.mockResolvedValue(null);
+    const { getAnalyticsOverview } = await import("./analytics.service");
+
+    await expect(
+      getAnalyticsOverview(
+        { orgId: "org-1", userId: "user-1" },
+        { campaignId: "campaign-other-tenant" },
+      ),
+    ).rejects.toMatchObject({ code: "RESOURCE_NOT_FOUND" });
   });
 });
 

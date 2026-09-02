@@ -39,6 +39,12 @@ export const MetricUpsertSchema = z.object({
     cost_cents: z.number().int().nonnegative().optional(),
   }),
   source: z.enum(["manual", "import", "integration"]).default("manual"),
+  currency: z.string().trim().length(3).transform((value) => value.toUpperCase()).nullish(),
+  attribution_window_days: z.number().int().min(1).max(365).nullish(),
+  attribution_model: z.string().trim().min(1).max(40).nullish(),
+  source_record_id: z.string().trim().min(1).max(200).nullish(),
+  source_observed_at: z.string().datetime({ offset: true }).nullish(),
+  metric_schema_version: z.number().int().min(1).default(2),
 });
 export type MetricUpsertInput = z.infer<typeof MetricUpsertSchema>;
 
@@ -150,24 +156,113 @@ export interface MetricDto {
   metric_date: string;
   metrics: Record<string, number>;
   source: string;
+  currency: string | null;
+  attribution_window_days: number | null;
+  attribution_model: string | null;
+  source_record_id: string | null;
+  source_observed_at: string | null;
+  ingested_at: string;
+  metric_schema_version: number;
   created_at: string;
+}
+
+export type AnalyticsKpiState = "complete" | "partial" | "missing" | "invalid" | "ambiguous";
+
+export interface AnalyticsKpiDetail {
+  value: number | null;
+  state: AnalyticsKpiState;
+  reason: string | null;
+  unit: "count" | "percent" | "multiple" | "currency_minor";
+  grain: string | null;
+  source: string | null;
+  observed_rows: number;
+  total_rows: number;
+}
+
+export interface AnalyticsDataQualityIssue {
+  code: string;
+  message: string;
+  severity: "info" | "warning";
 }
 
 export interface AnalyticsOverviewDto {
   campaign_id: string | null;
   date_from: string | null;
   date_to: string | null;
+  scope: {
+    requested_date_from: string | null;
+    requested_date_to: string | null;
+    actual_date_from: string | null;
+    actual_date_to: string | null;
+    label: string;
+  };
   totals: Record<string, number>;
   kpis: {
     engagement_rate: number | null;
     ctr: number | null;
     conversion_rate: number | null;
-    roi: number | null;
+    roas: number | null;
+    roi: null;
     cpa_cents: number | null;
   };
-  series: Array<{ date: string; views: number; engagements: number; conversions: number; revenue_cents: number }>;
-  top_performers: Array<{ entity_id: string; entity_type: string; label: string; score: number; metrics: Record<string, number> }>;
-  low_performers: Array<{ entity_id: string; entity_type: string; label: string; score: number; metrics: Record<string, number> }>;
+  kpi_details: {
+    impressions: AnalyticsKpiDetail;
+    engagement_rate: AnalyticsKpiDetail;
+    ctr: AnalyticsKpiDetail;
+    conversion_rate: AnalyticsKpiDetail;
+    roas: AnalyticsKpiDetail;
+    cpa_cents: AnalyticsKpiDetail;
+  };
+  financial_context: {
+    currency: string | null;
+    attribution_window_days: number | null;
+    attribution_model: string | null;
+    revenue_cents: number | null;
+    cost_cents: number | null;
+  };
+  freshness: {
+    latest_source_observed_at: string | null;
+    latest_ingested_at: string | null;
+  };
+  series: Array<{
+    date: string;
+    views: number | null;
+    engagements: number | null;
+    conversions: number | null;
+    revenue_cents: number | null;
+  }>;
+  top_performers: Array<{
+    entity_id: string;
+    entity_type: string;
+    label: string;
+    score: number;
+    platform: string;
+    ranking_metric: "engagement_rate";
+    metric_value: number;
+    sample_size: number;
+    metrics: Record<string, number>;
+  }>;
+  low_performers: Array<{
+    entity_id: string;
+    entity_type: string;
+    label: string;
+    score: number;
+    platform: string;
+    ranking_metric: "engagement_rate";
+    metric_value: number;
+    sample_size: number;
+    metrics: Record<string, number>;
+  }>;
+  ranking_groups: Array<{
+    entity_type: "campaign_creator" | "content_asset";
+    platform: string;
+    ranking_metric: "engagement_rate";
+    minimum_impressions: number;
+    excluded_count: number;
+    top: AnalyticsOverviewDto["top_performers"];
+    low: AnalyticsOverviewDto["low_performers"];
+  }>;
+  data_quality_issues: AnalyticsDataQualityIssue[];
   data_quality_notes: string[];
   insights: InsightDto[];
 }

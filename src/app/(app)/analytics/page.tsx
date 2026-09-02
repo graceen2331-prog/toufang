@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAnalyticsOverview, useGenerateAnalytics } from "@/features/analytics/queries";
 import { InsightsPanel } from "@/features/analytics/components/insights-panel";
+import { AnalyticsContext } from "@/features/analytics/components/analytics-context";
 import { KpiStrip } from "@/features/analytics/components/kpi-strip";
 import { PerformanceChart } from "@/features/analytics/components/performance-chart";
 import { RankingPanel } from "@/features/analytics/components/ranking-panel";
@@ -97,6 +98,7 @@ function AnalyticsPageInner() {
         error={overview.error}
         onRetry={() => overview.refetch()}
       >
+        {overview.data && <AnalyticsContext overview={overview.data} />}
         <KpiStrip overview={overview.data} />
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="space-y-4">

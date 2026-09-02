@@ -12,6 +12,12 @@ const iconByKind = {
   summary: Lightbulb,
 } as const;
 
+const SEVERITY_LABELS: Record<string, string> = {
+  info: "提示",
+  warning: "关注",
+  critical: "严重",
+};
+
 export function InsightsPanel({
   insights,
   notes,
@@ -22,7 +28,7 @@ export function InsightsPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">AI Insights</CardTitle>
+        <CardTitle className="text-base">AI 洞察</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {notes.length > 0 && (
@@ -48,7 +54,7 @@ export function InsightsPanel({
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-medium">{insight.title}</p>
                       <Badge variant={insight.severity === "critical" ? "destructive" : "secondary"}>
-                        {insight.severity}
+                        {SEVERITY_LABELS[insight.severity] ?? "提示"}
                       </Badge>
                     </div>
                     <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
