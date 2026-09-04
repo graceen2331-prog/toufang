@@ -1,105 +1,77 @@
 "use client";
 
-import { Activity, BarChart3, Megaphone, MousePointerClick, WalletCards } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  Activity,
+  BarChart3,
+  FileCheck2,
+  FileText,
+  Megaphone,
+  MessageSquareText,
+  MousePointerClick,
+  ScanText,
+  ShieldCheck,
+  WalletCards,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import type { AnalyticsOverviewDto } from "@/shared/schemas/content-analytics";
-import { formatCents } from "@/lib/format";
+import { Skeleton } from "@/components/ui/skeleton";
+import type {
+  DashboardMetricIcon,
+  DashboardMetricItem,
+} from "@/features/dashboard/use-dashboard-workspace";
 import { cn } from "@/lib/utils";
 
-function numberText(value: number | undefined): string {
-  return (value ?? 0).toLocaleString("zh-CN");
-}
+const ICONS: Record<DashboardMetricIcon, typeof Activity> = {
+  campaign: Megaphone,
+  impressions: BarChart3,
+  engagement: Activity,
+  conversion: MousePointerClick,
+  budget: WalletCards,
+  approval: ShieldCheck,
+  outreach: MessageSquareText,
+  content: ScanText,
+  contract: FileCheck2,
+  report: FileText,
+};
 
-function percentText(value: number | null | undefined): string {
-  return value === null || value === undefined ? "缺数据" : `${(value * 100).toFixed(1)}%`;
-}
-
-export function DashboardKpiGrid({
-  overview,
-  activeCampaigns,
-  totalBudgetCents,
-}: {
-  overview: AnalyticsOverviewDto | undefined;
-  activeCampaigns: number;
-  totalBudgetCents: number;
-}) {
-  const totals = overview?.totals ?? {};
-  const engagements = (totals.likes ?? 0) + (totals.comments ?? 0) + (totals.shares ?? 0);
+export function DashboardKpiGrid({ items }: { items: DashboardMetricItem[] }) {
+  if (items.length === 0) return null;
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      <KpiTile
-        label="活跃 Campaign"
-        value={activeCampaigns.toLocaleString("zh-CN")}
-        hint="排除完成、取消与归档"
-        icon={<Megaphone className="size-4" />}
-        accent="primary"
-      />
-      <KpiTile
-        label="总曝光"
-        value={numberText(totals.impressions)}
-        hint={`观看 ${numberText(totals.views)}`}
-        icon={<BarChart3 className="size-4" />}
-        accent="primary"
-      />
-      <KpiTile
-        label="互动率"
-        value={percentText(overview?.kpis.engagement_rate)}
-        hint={`互动 ${numberText(engagements)}`}
-        icon={<Activity className="size-4" />}
-        accent="violet"
-      />
-      <KpiTile
-        label="转化"
-        value={numberText(totals.conversions)}
-        hint={`CVR ${percentText(overview?.kpis.conversion_rate)}`}
-        icon={<MousePointerClick className="size-4" />}
-        accent="amber"
-      />
-      <KpiTile
-        label="预算池"
-        value={formatCents(totalBudgetCents)}
-        hint="当前列表 Campaign 预算"
-        icon={<WalletCards className="size-4" />}
-        accent="slate"
-      />
-    </div>
+    <section aria-label="工作台关键指标" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      {items.map((item) => (
+        <KpiTile key={item.key} item={item} />
+      ))}
+    </section>
   );
 }
 
-function KpiTile({
-  label,
-  value,
-  hint,
-  icon,
-  accent,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  icon: ReactNode;
-  accent: "primary" | "violet" | "amber" | "slate";
-}) {
+function KpiTile({ item }: { item: DashboardMetricItem }) {
+  const Icon = ICONS[item.icon];
   return (
     <Card className="rounded-lg border-0 bg-card/95 py-0 shadow-[0_12px_32px_oklch(0.24_0.03_250_/_0.08)] ring-1 ring-foreground/8">
       <CardContent className="p-4">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium text-muted-foreground">{label}</span>
+          <span className="text-sm font-medium text-muted-foreground">{item.label}</span>
           <span
             className={cn(
               "grid size-7 place-items-center rounded-md",
-              accent === "primary" && "bg-primary/10 text-primary",
-              accent === "violet" && "bg-violet-100 text-violet-700",
-              accent === "amber" && "bg-amber-100 text-amber-700",
-              accent === "slate" && "bg-slate-100 text-slate-700",
+              item.accent === "primary" && "bg-primary/10 text-primary",
+              item.accent === "violet" && "bg-violet-100 text-violet-700",
+              item.accent === "amber" && "bg-amber-100 text-amber-700",
+              item.accent === "slate" && "bg-slate-100 text-slate-700",
             )}
           >
-            {icon}
+            <Icon className="size-4" />
           </span>
         </div>
-        <div className="mt-3 text-2xl font-semibold tabular-nums">{value}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
+        {item.state === "loading" ? (
+          <Skeleton className="mt-3 h-8 w-24" />
+        ) : item.state === "error" ? (
+          <div className="mt-3 text-sm font-medium text-destructive">暂不可用</div>
+        ) : (
+          <div className="mt-3 text-2xl font-semibold tabular-nums">{item.value}</div>
+        )}
+        <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.hint}</div>
       </CardContent>
     </Card>
   );

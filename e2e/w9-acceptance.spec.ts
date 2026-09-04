@@ -353,7 +353,7 @@ test.describe("W9 最终验收", () => {
     const contentTitle = `W9 内容初稿 ${suffix}`;
 
     await login(page);
-    await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "经营总览" })).toBeVisible();
     await expect(page.getByText("总曝光")).toBeVisible();
     await expect(page.getByRole("button", { name: /星澜传媒/ })).toBeVisible();
 
