@@ -22,15 +22,15 @@ datasource db {
 // ============================================================
 
 model Organization {
-  id                 String    @id @default(uuid(7))
-  name               String
-  slug               String    @unique
-  status             String    @default("active") // active | trialing | suspended | cancelled
-  aiMonthlyBudgetCents Int     @default(100000) @map("ai_monthly_budget_cents")
-  settings           Json      @default("{}")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-  deletedAt          DateTime? @map("deleted_at")
+  id                   String    @id @default(uuid(7))
+  name                 String
+  slug                 String    @unique
+  status               String    @default("active") // active | trialing | suspended | cancelled
+  aiMonthlyBudgetCents Int       @default(100000) @map("ai_monthly_budget_cents")
+  settings             Json      @default("{}")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  deletedAt            DateTime? @map("deleted_at")
 
   workspaces  Workspace[]
   memberships Membership[]
@@ -205,6 +205,53 @@ model Product {
   @@map("products")
 }
 
+model BrandLead {
+  id                        String    @id @default(uuid(7))
+  tenantId                  String    @map("tenant_id")
+  source                    String    @default("ces_2026")
+  sourceId                  String    @map("source_id")
+  name                      String
+  nameZh                    String?   @map("name_zh")
+  website                   String?
+  country                   String?
+  description               String?
+  brandProfileZh            String?   @map("brand_profile_zh")
+  productCategories         String[]  @default([]) @map("product_categories")
+  boothVenue                String?   @map("booth_venue")
+  boothNumber               String?   @map("booth_number")
+  boothFull                 String?   @map("booth_full")
+  seekFunding               String?   @map("seek_funding")
+  fundingAmount             String?   @map("funding_amount")
+  revenue                   String?
+  investmentStage           String?   @map("investment_stage")
+  opportunityScore          Int       @default(0) @map("opportunity_score")
+  opportunityTier           String    @default("watch") @map("opportunity_tier")
+  recommendedCreatorProfile String?   @map("recommended_creator_profile")
+  campaignAngles            String[]  @default([]) @map("campaign_angles")
+  outreachSignals           String[]  @default([]) @map("outreach_signals")
+  rawData                   Json      @default("{}") @map("raw_data")
+  convertedCampaignId       String?   @unique @map("converted_campaign_id")
+  convertedAt               DateTime? @map("converted_at")
+  convertedById             String?   @map("converted_by_id")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+  createdBy                 String?   @map("created_by")
+  updatedBy                 String?   @map("updated_by")
+  deletedAt                 DateTime? @map("deleted_at")
+  deletedBy                 String?   @map("deleted_by")
+
+  convertedCampaign Campaign? @relation("BrandLeadConversion", fields: [tenantId, convertedCampaignId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, source, sourceId])
+  @@unique([tenantId, convertedCampaignId])
+  @@index([tenantId])
+  @@index([tenantId, source])
+  @@index([tenantId, country])
+  @@index([tenantId, opportunityTier])
+  @@index([tenantId, opportunityScore])
+  @@map("brand_leads")
+}
+
 // ============================================================
 // 3. 达人（6）
 // ============================================================
@@ -359,36 +406,38 @@ model CreatorNote {
 // ============================================================
 
 model Campaign {
-  id           String    @id @default(uuid(7))
-  tenantId     String    @map("tenant_id")
-  brandId      String    @map("brand_id")
-  productId    String?   @map("product_id")
-  name         String
-  objective    String? // awareness | conversion | launch | ...
-  status       String    @default("draft") // 17 态状态机见 shared/constants
-  healthStatus String    @default("on_track") @map("health_status") // on_track | at_risk | blocked | completed
-  markets      Json      @default("[]")
-  platforms    Json      @default("[]")
-  budgetTotalCents Int   @default(0) @map("budget_total_cents")
-  currency     String    @default("CNY")
-  goals        Json      @default("{}") // KPI 目标
-  milestones   Json      @default("[]") // 时间线里程碑
-  startDate    DateTime? @map("start_date")
-  endDate      DateTime? @map("end_date")
-  ownerId      String?   @map("owner_id")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-  createdBy    String?   @map("created_by")
-  updatedBy    String?   @map("updated_by")
-  deletedAt    DateTime? @map("deleted_at")
-  deletedBy    String?   @map("deleted_by")
+  id               String    @id @default(uuid(7))
+  tenantId         String    @map("tenant_id")
+  brandId          String    @map("brand_id")
+  productId        String?   @map("product_id")
+  name             String
+  objective        String? // awareness | conversion | launch | ...
+  status           String    @default("draft") // 17 态状态机见 shared/constants
+  healthStatus     String    @default("on_track") @map("health_status") // on_track | at_risk | blocked | completed
+  markets          Json      @default("[]")
+  platforms        Json      @default("[]")
+  budgetTotalCents Int       @default(0) @map("budget_total_cents")
+  currency         String    @default("CNY")
+  goals            Json      @default("{}") // KPI 目标
+  milestones       Json      @default("[]") // 时间线里程碑
+  startDate        DateTime? @map("start_date")
+  endDate          DateTime? @map("end_date")
+  ownerId          String?   @map("owner_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  createdBy        String?   @map("created_by")
+  updatedBy        String?   @map("updated_by")
+  deletedAt        DateTime? @map("deleted_at")
+  deletedBy        String?   @map("deleted_by")
 
   brand            Brand                     @relation(fields: [brandId], references: [id])
   campaignCreators CampaignCreator[]
   strategyVersions CampaignStrategyVersion[]
   tasks            CampaignTask[]
   budgetItems      CampaignBudgetItem[]
+  sourceBrandLead  BrandLead?                @relation("BrandLeadConversion")
 
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([brandId])
@@ -397,29 +446,29 @@ model Campaign {
 
 // 核心中间表：达人在 Campaign 中的执行状态
 model CampaignCreator {
-  id             String    @id @default(uuid(7))
-  tenantId       String    @map("tenant_id")
-  campaignId     String    @map("campaign_id")
-  creatorId      String    @map("creator_id")
-  status         String    @default("candidate") // 16 态状态机
-  contractStatus String    @default("none") @map("contract_status")
-  paymentStatus  String    @default("none") @map("payment_status")
-  contentStatus  String    @default("none") @map("content_status")
-  role           String? // 建议达人角色：hero | amplifier | seeder
-  quotedPriceCents Int?    @map("quoted_price_cents")
-  agreedPriceCents Int?    @map("agreed_price_cents")
-  currency       String    @default("CNY")
-  deliverables   Json      @default("[]")
+  id               String    @id @default(uuid(7))
+  tenantId         String    @map("tenant_id")
+  campaignId       String    @map("campaign_id")
+  creatorId        String    @map("creator_id")
+  status           String    @default("candidate") // 16 态状态机
+  contractStatus   String    @default("none") @map("contract_status")
+  paymentStatus    String    @default("none") @map("payment_status")
+  contentStatus    String    @default("none") @map("content_status")
+  role             String? // 建议达人角色：hero | amplifier | seeder
+  quotedPriceCents Int?      @map("quoted_price_cents")
+  agreedPriceCents Int?      @map("agreed_price_cents")
+  currency         String    @default("CNY")
+  deliverables     Json      @default("[]")
   // AI 溯源（发现/推荐来源）
-  aiGenerated    Boolean   @default(false) @map("ai_generated")
-  agentRunId     String?   @map("agent_run_id")
-  matchScore     Float?    @map("match_score")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-  createdBy      String?   @map("created_by")
-  updatedBy      String?   @map("updated_by")
-  deletedAt      DateTime? @map("deleted_at")
-  deletedBy      String?   @map("deleted_by")
+  aiGenerated      Boolean   @default(false) @map("ai_generated")
+  agentRunId       String?   @map("agent_run_id")
+  matchScore       Float?    @map("match_score")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  createdBy        String?   @map("created_by")
+  updatedBy        String?   @map("updated_by")
+  deletedAt        DateTime? @map("deleted_at")
+  deletedBy        String?   @map("deleted_by")
 
   campaign Campaign @relation(fields: [campaignId], references: [id])
   creator  Creator  @relation(fields: [creatorId], references: [id])
@@ -460,20 +509,20 @@ model CampaignStrategyVersion {
 }
 
 model CampaignTask {
-  id         String    @id @default(uuid(7))
-  tenantId   String    @map("tenant_id")
-  campaignId String    @map("campaign_id")
-  title      String
+  id          String    @id @default(uuid(7))
+  tenantId    String    @map("tenant_id")
+  campaignId  String    @map("campaign_id")
+  title       String
   description String?
-  status     String    @default("todo") // todo | in_progress | done | cancelled
-  priority   String    @default("normal") // low | normal | high | urgent
-  assigneeId String?   @map("assignee_id")
-  dueAt      DateTime? @map("due_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
-  createdBy  String?   @map("created_by")
-  updatedBy  String?   @map("updated_by")
-  deletedAt  DateTime? @map("deleted_at")
+  status      String    @default("todo") // todo | in_progress | done | cancelled
+  priority    String    @default("normal") // low | normal | high | urgent
+  assigneeId  String?   @map("assignee_id")
+  dueAt       DateTime? @map("due_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  createdBy   String?   @map("created_by")
+  updatedBy   String?   @map("updated_by")
+  deletedAt   DateTime? @map("deleted_at")
 
   campaign Campaign @relation(fields: [campaignId], references: [id])
 
@@ -483,22 +532,22 @@ model CampaignTask {
 }
 
 model CampaignBudgetItem {
-  id          String    @id @default(uuid(7))
-  tenantId    String    @map("tenant_id")
-  campaignId  String    @map("campaign_id")
-  category    String // creator_fee | production | media | other
-  name        String
-  plannedCents Int      @default(0) @map("planned_cents")
-  reservedCents Int     @default(0) @map("reserved_cents")
-  spentCents  Int       @default(0) @map("spent_cents")
-  currency    String    @default("CNY")
-  relatedType String?   @map("related_type") // campaign_creator | contract | ...
-  relatedId   String?   @map("related_id")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  createdBy   String?   @map("created_by")
-  updatedBy   String?   @map("updated_by")
-  deletedAt   DateTime? @map("deleted_at")
+  id            String    @id @default(uuid(7))
+  tenantId      String    @map("tenant_id")
+  campaignId    String    @map("campaign_id")
+  category      String // creator_fee | production | media | other
+  name          String
+  plannedCents  Int       @default(0) @map("planned_cents")
+  reservedCents Int       @default(0) @map("reserved_cents")
+  spentCents    Int       @default(0) @map("spent_cents")
+  currency      String    @default("CNY")
+  relatedType   String?   @map("related_type") // campaign_creator | contract | ...
+  relatedId     String?   @map("related_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  createdBy     String?   @map("created_by")
+  updatedBy     String?   @map("updated_by")
+  deletedAt     DateTime? @map("deleted_at")
 
   campaign Campaign @relation(fields: [campaignId], references: [id])
 
@@ -532,17 +581,17 @@ model StatusEvent {
 // ============================================================
 
 model OutreachThread {
-  id                 String    @id @default(uuid(7))
-  tenantId           String    @map("tenant_id")
-  campaignCreatorId  String    @map("campaign_creator_id")
-  channel            String    @default("email") // email | dm_manual
-  status             String    @default("open") // open | replied | negotiating | closed_won | closed_lost | no_response
-  subject            String?
-  lastMessageAt      DateTime? @map("last_message_at")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-  createdBy          String?   @map("created_by")
-  deletedAt          DateTime? @map("deleted_at")
+  id                String    @id @default(uuid(7))
+  tenantId          String    @map("tenant_id")
+  campaignCreatorId String    @map("campaign_creator_id")
+  channel           String    @default("email") // email | dm_manual
+  status            String    @default("open") // open | replied | negotiating | closed_won | closed_lost | no_response
+  subject           String?
+  lastMessageAt     DateTime? @map("last_message_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  createdBy         String?   @map("created_by")
+  deletedAt         DateTime? @map("deleted_at")
 
   messages           OutreachMessage[]
   negotiationRecords NegotiationRecord[]
@@ -601,27 +650,27 @@ model OutreachSequence {
 }
 
 model NegotiationRecord {
-  id              String    @id @default(uuid(7))
-  tenantId        String    @map("tenant_id")
-  threadId        String    @map("thread_id")
-  status          String    @default("analyzing") // analyzing | negotiating | approval_required | agreed | closed
-  quotedPriceCents Int?     @map("quoted_price_cents")
-  counterPriceCents Int?    @map("counter_price_cents")
-  agreedPriceCents Int?     @map("agreed_price_cents")
-  currency        String    @default("CNY")
-  pricingAnalysis Json      @default("{}") @map("pricing_analysis") // AI 报价分析
-  strategy        Json      @default("{}") // AI 谈判策略建议
-  agreedTerms     Json      @default("{}") @map("agreed_terms") // 交付物/授权/付款条款
+  id                String    @id @default(uuid(7))
+  tenantId          String    @map("tenant_id")
+  threadId          String    @map("thread_id")
+  status            String    @default("analyzing") // analyzing | negotiating | approval_required | agreed | closed
+  quotedPriceCents  Int?      @map("quoted_price_cents")
+  counterPriceCents Int?      @map("counter_price_cents")
+  agreedPriceCents  Int?      @map("agreed_price_cents")
+  currency          String    @default("CNY")
+  pricingAnalysis   Json      @default("{}") @map("pricing_analysis") // AI 报价分析
+  strategy          Json      @default("{}") // AI 谈判策略建议
+  agreedTerms       Json      @default("{}") @map("agreed_terms") // 交付物/授权/付款条款
   // AI 溯源
-  agentRunId      String?   @map("agent_run_id")
-  promptKey       String?   @map("prompt_key")
-  promptVersion   String?   @map("prompt_version")
-  model           String?
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  createdBy       String?   @map("created_by")
-  updatedBy       String?   @map("updated_by")
-  deletedAt       DateTime? @map("deleted_at")
+  agentRunId        String?   @map("agent_run_id")
+  promptKey         String?   @map("prompt_key")
+  promptVersion     String?   @map("prompt_version")
+  model             String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  createdBy         String?   @map("created_by")
+  updatedBy         String?   @map("updated_by")
+  deletedAt         DateTime? @map("deleted_at")
 
   thread OutreachThread @relation(fields: [threadId], references: [id])
 
@@ -681,31 +730,31 @@ model BriefVersion {
 }
 
 model ContentAsset {
-  id                String    @id @default(uuid(7))
-  tenantId          String    @map("tenant_id")
-  campaignCreatorId String    @map("campaign_creator_id")
-  briefId           String?   @map("brief_id")
-  title             String?
-  status            String    @default("submitted") // 9 态状态机
-  contentType       String?   @map("content_type") // video | image | article | live
-  platform          String?
-  caption           String?
-  transcript        String?
-  url               String?
-  fileId            String?   @map("file_id")
-  plannedPublishAt  DateTime? @map("planned_publish_at")
-  publishedAt       DateTime? @map("published_at")
-  publishedUrl      String?   @map("published_url")
-  activeReviewId    String?   @map("active_review_id")
-  approvedReviewId  String?   @map("approved_review_id")
-  approvedCheckpointId String? @map("approved_checkpoint_id")
-  approvedContentHash String?  @map("approved_content_hash")
-  contentApprovedAt DateTime?  @map("content_approved_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
-  createdBy         String?   @map("created_by")
-  updatedBy         String?   @map("updated_by")
-  deletedAt         DateTime? @map("deleted_at")
+  id                   String    @id @default(uuid(7))
+  tenantId             String    @map("tenant_id")
+  campaignCreatorId    String    @map("campaign_creator_id")
+  briefId              String?   @map("brief_id")
+  title                String?
+  status               String    @default("submitted") // 9 态状态机
+  contentType          String?   @map("content_type") // video | image | article | live
+  platform             String?
+  caption              String?
+  transcript           String?
+  url                  String?
+  fileId               String?   @map("file_id")
+  plannedPublishAt     DateTime? @map("planned_publish_at")
+  publishedAt          DateTime? @map("published_at")
+  publishedUrl         String?   @map("published_url")
+  activeReviewId       String?   @map("active_review_id")
+  approvedReviewId     String?   @map("approved_review_id")
+  approvedCheckpointId String?   @map("approved_checkpoint_id")
+  approvedContentHash  String?   @map("approved_content_hash")
+  contentApprovedAt    DateTime? @map("content_approved_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  createdBy            String?   @map("created_by")
+  updatedBy            String?   @map("updated_by")
+  deletedAt            DateTime? @map("deleted_at")
 
   reviews ContentReview[]
 
@@ -717,32 +766,32 @@ model ContentAsset {
 }
 
 model ContentReview {
-  id             String    @id @default(uuid(7))
-  tenantId       String    @map("tenant_id")
-  contentAssetId String    @map("content_asset_id")
-  status         String    @default("queued") // queued | reviewing | completed
-  decision       String? // approved | needs_revision | rejected
-  riskLevel      String?   @map("risk_level") // low | medium | high
-  findings       Json      @default("[]") // [{type, severity, quote, issue, suggestion}]
-  feedback       String? // 面向达人的修改意见
-  reviewerId     String?   @map("reviewer_id") // 人工审核人
-  inputHash      String?   @map("input_hash")
-  ruleSetVersion String?   @map("rule_set_version")
-  deterministicSummary Json @default("{}") @map("deterministic_summary")
-  normalizationNotes Json @default("[]") @map("normalization_notes")
-  finalDecision  String?   @map("final_decision") // approved | changes_requested | rejected
-  checkpointId   String?   @unique @map("checkpoint_id")
-  overrideMetadata Json    @default("{}") @map("override_metadata")
+  id                   String    @id @default(uuid(7))
+  tenantId             String    @map("tenant_id")
+  contentAssetId       String    @map("content_asset_id")
+  status               String    @default("queued") // queued | reviewing | completed
+  decision             String? // approved | needs_revision | rejected
+  riskLevel            String?   @map("risk_level") // low | medium | high
+  findings             Json      @default("[]") // [{type, severity, quote, issue, suggestion}]
+  feedback             String? // 面向达人的修改意见
+  reviewerId           String?   @map("reviewer_id") // 人工审核人
+  inputHash            String?   @map("input_hash")
+  ruleSetVersion       String?   @map("rule_set_version")
+  deterministicSummary Json      @default("{}") @map("deterministic_summary")
+  normalizationNotes   Json      @default("[]") @map("normalization_notes")
+  finalDecision        String?   @map("final_decision") // approved | changes_requested | rejected
+  checkpointId         String?   @unique @map("checkpoint_id")
+  overrideMetadata     Json      @default("{}") @map("override_metadata")
   // AI 溯源
-  aiGenerated    Boolean   @default(false) @map("ai_generated")
-  agentRunId     String?   @map("agent_run_id")
-  promptKey      String?   @map("prompt_key")
-  promptVersion  String?   @map("prompt_version")
-  model          String?
-  confidence     Float?
-  completedAt    DateTime? @map("completed_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  createdBy      String?   @map("created_by")
+  aiGenerated          Boolean   @default(false) @map("ai_generated")
+  agentRunId           String?   @map("agent_run_id")
+  promptKey            String?   @map("prompt_key")
+  promptVersion        String?   @map("prompt_version")
+  model                String?
+  confidence           Float?
+  completedAt          DateTime? @map("completed_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  createdBy            String?   @map("created_by")
 
   contentAsset ContentAsset @relation(fields: [contentAssetId], references: [id])
 
@@ -784,57 +833,57 @@ model Contract {
 }
 
 model PaymentRecord {
-  id          String    @id @default(uuid(7))
-  tenantId    String    @map("tenant_id")
-  contractId  String    @map("contract_id")
-  status      String    @default("not_started") // 8 态状态机
-  version     Int       @default(0)
-  amountCents Int       @map("amount_cents")
-  currency    String    @default("CNY")
-  method      String? // bank | alipay | paypal | ...
-  accountInfo Json      @default("{}") @map("account_info") // 应用层加密
-  invoice     Json      @default("{}") // 发票信息 + file 引用
-  requestKey  String?   @map("request_key")
-  requestHash String?   @map("request_hash")
-  milestoneKey String?  @map("milestone_key")
-  milestoneLabel String? @map("milestone_label")
-  milestoneSnapshot Json @default("{}") @map("milestone_snapshot")
-  payeeNameSnapshot String? @map("payee_name_snapshot")
-  payeeAccountFingerprint String? @map("payee_account_fingerprint")
-  payeeAccountFingerprintVersion String? @map("payee_account_fingerprint_version")
-  payeeAccountLast4 String? @map("payee_account_last4")
-  invoiceNumber String? @map("invoice_number")
-  invoiceIssuer String? @map("invoice_issuer")
-  invoiceAmountCents Int? @map("invoice_amount_cents")
-  invoiceCurrency String? @map("invoice_currency")
-  invoiceExceptionReason String? @map("invoice_exception_reason")
-  invoiceFingerprint String? @map("invoice_fingerprint")
-  dedupeFingerprint String? @map("dedupe_fingerprint")
-  approvalCheckpointId String? @unique @map("approval_checkpoint_id")
-  approvalSnapshot Json @default("{}") @map("approval_snapshot")
-  approvalSnapshotHash String? @map("approval_snapshot_hash")
-  approvalHashAlgorithm String? @map("approval_hash_algorithm")
-  settlementRequestKey String? @map("settlement_request_key")
-  reconciliationReference String? @map("reconciliation_reference")
-  reconciliationEvidence Json @default("{}") @map("reconciliation_evidence")
-  reconciliationHash String? @map("reconciliation_hash")
-  paidAt      DateTime? @map("paid_at")
-  paidBy      String?   @map("paid_by")
-  approvedAt  DateTime? @map("approved_at")
-  approvedBy  String?   @map("approved_by")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  createdBy   String?   @map("created_by")
-  updatedBy   String?   @map("updated_by")
-  deletedAt   DateTime? @map("deleted_at")
+  id                             String    @id @default(uuid(7))
+  tenantId                       String    @map("tenant_id")
+  contractId                     String    @map("contract_id")
+  status                         String    @default("not_started") // 8 态状态机
+  version                        Int       @default(0)
+  amountCents                    Int       @map("amount_cents")
+  currency                       String    @default("CNY")
+  method                         String? // bank | alipay | paypal | ...
+  accountInfo                    Json      @default("{}") @map("account_info") // 应用层加密
+  invoice                        Json      @default("{}") // 发票信息 + file 引用
+  requestKey                     String?   @map("request_key")
+  requestHash                    String?   @map("request_hash")
+  milestoneKey                   String?   @map("milestone_key")
+  milestoneLabel                 String?   @map("milestone_label")
+  milestoneSnapshot              Json      @default("{}") @map("milestone_snapshot")
+  payeeNameSnapshot              String?   @map("payee_name_snapshot")
+  payeeAccountFingerprint        String?   @map("payee_account_fingerprint")
+  payeeAccountFingerprintVersion String?   @map("payee_account_fingerprint_version")
+  payeeAccountLast4              String?   @map("payee_account_last4")
+  invoiceNumber                  String?   @map("invoice_number")
+  invoiceIssuer                  String?   @map("invoice_issuer")
+  invoiceAmountCents             Int?      @map("invoice_amount_cents")
+  invoiceCurrency                String?   @map("invoice_currency")
+  invoiceExceptionReason         String?   @map("invoice_exception_reason")
+  invoiceFingerprint             String?   @map("invoice_fingerprint")
+  dedupeFingerprint              String?   @map("dedupe_fingerprint")
+  approvalCheckpointId           String?   @unique @map("approval_checkpoint_id")
+  approvalSnapshot               Json      @default("{}") @map("approval_snapshot")
+  approvalSnapshotHash           String?   @map("approval_snapshot_hash")
+  approvalHashAlgorithm          String?   @map("approval_hash_algorithm")
+  settlementRequestKey           String?   @map("settlement_request_key")
+  reconciliationReference        String?   @map("reconciliation_reference")
+  reconciliationEvidence         Json      @default("{}") @map("reconciliation_evidence")
+  reconciliationHash             String?   @map("reconciliation_hash")
+  paidAt                         DateTime? @map("paid_at")
+  paidBy                         String?   @map("paid_by")
+  approvedAt                     DateTime? @map("approved_at")
+  approvedBy                     String?   @map("approved_by")
+  createdAt                      DateTime  @default(now()) @map("created_at")
+  updatedAt                      DateTime  @updatedAt @map("updated_at")
+  createdBy                      String?   @map("created_by")
+  updatedBy                      String?   @map("updated_by")
+  deletedAt                      DateTime? @map("deleted_at")
 
   contract Contract @relation(fields: [contractId], references: [id])
 
-  @@index([tenantId])
-  @@index([contractId])
   @@unique([tenantId, requestKey])
   @@unique([tenantId, settlementRequestKey])
   @@unique([tenantId, reconciliationReference])
+  @@index([tenantId])
+  @@index([contractId])
   @@index([tenantId, contractId, status])
   @@map("payment_records")
 }
@@ -845,23 +894,23 @@ model PaymentRecord {
 
 // 横切：统一日粒度指标快照（同实体/平台/日期幂等更新）
 model PerformanceMetric {
-  id                    String   @id @default(uuid(7))
-  tenantId              String   @map("tenant_id")
-  entityType            String   @map("entity_type") // campaign | campaign_creator | content_asset
-  entityId              String   @map("entity_id")
+  id                    String    @id @default(uuid(7))
+  tenantId              String    @map("tenant_id")
+  entityType            String    @map("entity_type") // campaign | campaign_creator | content_asset
+  entityId              String    @map("entity_id")
   platform              String?
-  metricDate            DateTime @map("metric_date") @db.Date
+  metricDate            DateTime  @map("metric_date") @db.Date
   metrics               Json // 缺失 key 表示未提供；数值 0 表示明确观测为 0
-  source                String   @default("manual") // manual | import | integration
+  source                String    @default("manual") // manual | import | integration
   currency              String?
-  attributionWindowDays Int?     @map("attribution_window_days")
-  attributionModel      String?  @map("attribution_model")
-  sourceRecordId        String?  @map("source_record_id")
+  attributionWindowDays Int?      @map("attribution_window_days")
+  attributionModel      String?   @map("attribution_model")
+  sourceRecordId        String?   @map("source_record_id")
   sourceObservedAt      DateTime? @map("source_observed_at")
-  ingestedAt            DateTime @default(now()) @updatedAt @map("ingested_at")
-  metricSchemaVersion   Int      @default(1) @map("metric_schema_version")
-  createdAt             DateTime @default(now()) @map("created_at")
-  createdBy             String?  @map("created_by")
+  ingestedAt            DateTime  @default(now()) @updatedAt @map("ingested_at")
+  metricSchemaVersion   Int       @default(1) @map("metric_schema_version")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  createdBy             String?   @map("created_by")
 
   @@unique([tenantId, entityType, entityId, platform, metricDate])
   @@index([tenantId])
@@ -895,37 +944,37 @@ model Insight {
 }
 
 model Report {
-  id            String    @id @default(uuid(7))
-  tenantId      String    @map("tenant_id")
-  seriesId      String    @map("series_id")
-  version       Int       @default(1)
-  supersedesId  String?   @unique @map("supersedes_id")
-  lockVersion   Int       @default(0) @map("lock_version")
-  campaignId    String?   @map("campaign_id")
-  title         String
-  kind          String    @default("campaign_retro") // campaign_retro | executive | custom
-  status        String    @default("draft") // generating | draft | in_review | approved | exported
-  content       Json      @default("{}") // 结构化报告块
-  approvedAt    DateTime? @map("approved_at")
-  approvedBy    String?   @map("approved_by")
-  submittedSnapshotHash String? @map("submitted_snapshot_hash")
-  approvedSnapshotHash  String? @map("approved_snapshot_hash")
-  hashAlgorithm String?  @map("hash_algorithm")
-  derivationReason String? @map("derivation_reason")
+  id                    String    @id @default(uuid(7))
+  tenantId              String    @map("tenant_id")
+  seriesId              String    @map("series_id")
+  version               Int       @default(1)
+  supersedesId          String?   @unique @map("supersedes_id")
+  lockVersion           Int       @default(0) @map("lock_version")
+  campaignId            String?   @map("campaign_id")
+  title                 String
+  kind                  String    @default("campaign_retro") // campaign_retro | executive | custom
+  status                String    @default("draft") // generating | draft | in_review | approved | exported
+  content               Json      @default("{}") // 结构化报告块
+  approvedAt            DateTime? @map("approved_at")
+  approvedBy            String?   @map("approved_by")
+  submittedSnapshotHash String?   @map("submitted_snapshot_hash")
+  approvedSnapshotHash  String?   @map("approved_snapshot_hash")
+  hashAlgorithm         String?   @map("hash_algorithm")
+  derivationReason      String?   @map("derivation_reason")
   // AI 溯源
-  aiGenerated   Boolean   @default(true) @map("ai_generated")
-  agentRunId    String?   @map("agent_run_id")
-  promptKey     String?   @map("prompt_key")
-  promptVersion String?   @map("prompt_version")
-  model         String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  createdBy     String?   @map("created_by")
-  updatedBy     String?   @map("updated_by")
-  deletedAt     DateTime? @map("deleted_at")
+  aiGenerated           Boolean   @default(true) @map("ai_generated")
+  agentRunId            String?   @map("agent_run_id")
+  promptKey             String?   @map("prompt_key")
+  promptVersion         String?   @map("prompt_version")
+  model                 String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  createdBy             String?   @map("created_by")
+  updatedBy             String?   @map("updated_by")
+  deletedAt             DateTime? @map("deleted_at")
 
-  supersedes   Report?       @relation("ReportRevision", fields: [supersedesId], references: [id], onDelete: Restrict)
-  supersededBy Report?       @relation("ReportRevision")
+  supersedes   Report?        @relation("ReportRevision", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy Report?        @relation("ReportRevision")
   exports      ReportExport[]
 
   @@unique([tenantId, seriesId, version])
@@ -979,8 +1028,8 @@ model WorkflowRun {
   steps       WorkflowStep[]
   agentRuns   AgentRun[]
   checkpoints HumanCheckpoint[]
-  retryOf     WorkflowRun?  @relation("WorkflowRunRetry", fields: [retryOfRunId], references: [id], onDelete: Restrict)
-  retriedBy   WorkflowRun?  @relation("WorkflowRunRetry")
+  retryOf     WorkflowRun?      @relation("WorkflowRunRetry", fields: [retryOfRunId], references: [id], onDelete: Restrict)
+  retriedBy   WorkflowRun?      @relation("WorkflowRunRetry")
 
   @@index([tenantId])
   @@index([tenantId, status])
@@ -1011,58 +1060,97 @@ model WorkflowStep {
 }
 
 model AgentRun {
-  id            String    @id @default(uuid(7))
-  tenantId      String    @map("tenant_id")
-  workflowRunId String?   @map("workflow_run_id")
-  agentKey      String    @map("agent_key") // research | creator_discovery | ... 见 ai/agents
-  status        String    @default("running") // running | completed | failed
-  input         Json      @default("{}")
-  output        Json      @default("{}")
-  toolCalls     Json      @default("[]") @map("tool_calls")
-  promptKey     String?   @map("prompt_key")
-  promptVersion String?   @map("prompt_version")
-  model         String?
-  failureReason String?   @map("failure_reason")
-  startedAt     DateTime  @default(now()) @map("started_at")
-  completedAt   DateTime? @map("completed_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  createdBy     String?   @map("created_by")
+  id             String    @id @default(uuid(7))
+  tenantId       String    @map("tenant_id")
+  workflowRunId  String?   @map("workflow_run_id")
+  agentKey       String    @map("agent_key") // research | creator_discovery | ... 见 ai/agents
+  status         String    @default("running") // running | completed | failed | cancelled
+  subjectType    String?   @map("subject_type")
+  subjectId      String?   @map("subject_id")
+  input          Json      @default("{}")
+  output         Json      @default("{}")
+  toolCalls      Json      @default("[]") @map("tool_calls")
+  promptSnapshot Json      @default("{}") @map("prompt_snapshot")
+  promptKey      String?   @map("prompt_key")
+  promptVersion  String?   @map("prompt_version")
+  model          String?
+  failureReason  String?   @map("failure_reason")
+  startedAt      DateTime  @default(now()) @map("started_at")
+  lastActivityAt DateTime  @default(now()) @map("last_activity_at")
+  completedAt    DateTime? @map("completed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  createdBy      String?   @map("created_by")
 
   workflowRun WorkflowRun? @relation(fields: [workflowRunId], references: [id])
+  calls       AgentCall[]
 
   @@index([tenantId])
   @@index([workflowRunId])
   @@index([tenantId, agentKey, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, subjectType, subjectId])
   @@map("agent_runs")
+}
+
+// 每一次模型 Provider 调用尝试一行（含失败、自动重试与结构修复）
+model AgentCall {
+  id              String    @id @default(uuid(7))
+  tenantId        String    @map("tenant_id")
+  agentRunId      String    @map("agent_run_id")
+  phase           String // primary | repair
+  attempt         Int       @default(1)
+  status          String    @default("running") // running | completed | failed
+  provider        String
+  model           String
+  requestPayload  Json      @default("{}") @map("request_payload")
+  responsePayload Json      @default("{}") @map("response_payload")
+  inputTokens     Int       @default(0) @map("input_tokens")
+  outputTokens    Int       @default(0) @map("output_tokens")
+  costMicrocents  Int       @default(0) @map("cost_microcents")
+  latencyMs       Int       @default(0) @map("latency_ms")
+  errorType       String?   @map("error_type")
+  errorCode       String?   @map("error_code")
+  errorMessage    String?   @map("error_message")
+  startedAt       DateTime  @default(now()) @map("started_at")
+  completedAt     DateTime? @map("completed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id])
+
+  @@unique([agentRunId, phase, attempt])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@index([agentRunId, createdAt])
+  @@map("agent_calls")
 }
 
 // 横切：统一人工审批（审批中心数据源）
 model HumanCheckpoint {
-  id            String    @id @default(uuid(7))
-  tenantId      String    @map("tenant_id")
-  workflowRunId String?   @map("workflow_run_id")
-  type          String // strategy | shortlist | brief | outreach_send | negotiation_terms | content | contract | payment | report | budget
-  status        String    @default("pending") // pending | approved | rejected | changes_requested | escalated
-  title         String
-  summary       String?
-  entityType    String?   @map("entity_type")
-  entityId      String?   @map("entity_id")
-  payload       Json      @default("{}") // 审批上下文（diff、金额、风险提示）
-  priority      String    @default("normal") // low | normal | high | urgent
-  assigneeRole  String?   @map("assignee_role") // 需要哪个角色审批
-  assigneeId    String?   @map("assignee_id") // 指定审批人；为空时进入角色审批池
-  dueAt         DateTime? @map("due_at")
-  escalationLevel Int     @default(0) @map("escalation_level")
-  lastEscalatedAt DateTime? @map("last_escalated_at")
-  lastEscalatedBy String? @map("last_escalated_by")
-  version       Int       @default(0)
-  decidedBy     String?   @map("decided_by")
-  decidedAt     DateTime? @map("decided_at")
-  decisionReason String?  @map("decision_reason")
-  decisionMetadata Json   @default("{}") @map("decision_metadata")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  createdBy     String?   @map("created_by")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id               String    @id @default(uuid(7))
+  tenantId         String    @map("tenant_id")
+  workflowRunId    String?   @map("workflow_run_id")
+  type             String // strategy | shortlist | brief | outreach_send | negotiation_terms | content | contract | payment | report | budget
+  status           String    @default("pending") // pending | approved | rejected | changes_requested | escalated
+  title            String
+  summary          String?
+  entityType       String?   @map("entity_type")
+  entityId         String?   @map("entity_id")
+  payload          Json      @default("{}") // 审批上下文（diff、金额、风险提示）
+  priority         String    @default("normal") // low | normal | high | urgent
+  assigneeRole     String?   @map("assignee_role") // 需要哪个角色审批
+  assigneeId       String?   @map("assignee_id") // 指定审批人；为空时进入角色审批池
+  dueAt            DateTime? @map("due_at")
+  escalationLevel  Int       @default(0) @map("escalation_level")
+  lastEscalatedAt  DateTime? @map("last_escalated_at")
+  lastEscalatedBy  String?   @map("last_escalated_by")
+  version          Int       @default(0)
+  decidedBy        String?   @map("decided_by")
+  decidedAt        DateTime? @map("decided_at")
+  decisionReason   String?   @map("decision_reason")
+  decisionMetadata Json      @default("{}") @map("decision_metadata")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  createdBy        String?   @map("created_by")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   workflowRun WorkflowRun? @relation(fields: [workflowRunId], references: [id])
 
@@ -1077,18 +1165,18 @@ model HumanCheckpoint {
 
 // 审批操作追加事件：转交、升级、决策均在同一事务内写入，便于审计与追责
 model HumanCheckpointEvent {
-  id              String    @id @default(uuid(7))
-  tenantId        String    @map("tenant_id")
-  checkpointId    String    @map("checkpoint_id")
-  eventType       String    @map("event_type") // created | assigned | reassigned | escalated | decided
-  actorId         String?   @map("actor_id")
-  fromStatus      String?   @map("from_status")
-  toStatus        String?   @map("to_status")
-  fromAssigneeId  String?   @map("from_assignee_id")
-  toAssigneeId    String?   @map("to_assignee_id")
-  reason          String?
-  metadata        Json      @default("{}")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  id             String   @id @default(uuid(7))
+  tenantId       String   @map("tenant_id")
+  checkpointId   String   @map("checkpoint_id")
+  eventType      String   @map("event_type") // created | assigned | reassigned | escalated | decided
+  actorId        String?  @map("actor_id")
+  fromStatus     String?  @map("from_status")
+  toStatus       String?  @map("to_status")
+  fromAssigneeId String?  @map("from_assignee_id")
+  toAssigneeId   String?  @map("to_assignee_id")
+  reason         String?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   @@index([tenantId, checkpointId, createdAt])
   @@index([tenantId, eventType, createdAt])
@@ -1097,19 +1185,19 @@ model HumanCheckpointEvent {
 
 // 每次模型调用一行（token/成本记账）
 model AiUsageEvent {
-  id               String   @id @default(uuid(7))
-  tenantId         String   @map("tenant_id")
-  agentRunId       String?  @map("agent_run_id")
-  agentKey         String?  @map("agent_key")
-  provider         String // openai | fake | anthropic | gemini
-  model            String
-  purpose          String   @default("chat") // chat | embedding
-  inputTokens      Int      @default(0) @map("input_tokens")
-  outputTokens     Int      @default(0) @map("output_tokens")
-  costMicrocents   Int      @default(0) @map("cost_microcents") // 成本，单位百万分之一分，避免浮点
-  latencyMs        Int      @default(0) @map("latency_ms")
-  createdAt        DateTime @default(now()) @map("created_at")
-  createdBy        String?  @map("created_by")
+  id             String   @id @default(uuid(7))
+  tenantId       String   @map("tenant_id")
+  agentRunId     String?  @map("agent_run_id")
+  agentKey       String?  @map("agent_key")
+  provider       String // openai | fake | anthropic | gemini
+  model          String
+  purpose        String   @default("chat") // chat | embedding
+  inputTokens    Int      @default(0) @map("input_tokens")
+  outputTokens   Int      @default(0) @map("output_tokens")
+  costMicrocents Int      @default(0) @map("cost_microcents") // 成本，单位百万分之一分，避免浮点
+  latencyMs      Int      @default(0) @map("latency_ms")
+  createdAt      DateTime @default(now()) @map("created_at")
+  createdBy      String?  @map("created_by")
 
   @@index([tenantId, createdAt])
   @@index([agentRunId])
@@ -1173,16 +1261,16 @@ model KnowledgeChunk {
 
 // append-only
 model RagQuery {
-  id            String   @id @default(uuid(7))
-  tenantId      String   @map("tenant_id")
-  userId        String?  @map("user_id")
-  agentRunId    String?  @map("agent_run_id")
-  query         String
-  answer        String?
-  citations     Json     @default("[]") // [{chunk_id, document_id, quote, index}]
-  feedback      String? // helpful | not_helpful
-  latencyMs     Int      @default(0) @map("latency_ms")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid(7))
+  tenantId   String   @map("tenant_id")
+  userId     String?  @map("user_id")
+  agentRunId String?  @map("agent_run_id")
+  query      String
+  answer     String?
+  citations  Json     @default("[]") // [{chunk_id, document_id, quote, index}]
+  feedback   String? // helpful | not_helpful
+  latencyMs  Int      @default(0) @map("latency_ms")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([tenantId, createdAt])
   @@map("rag_queries")
@@ -1233,16 +1321,16 @@ model AuditLog {
 }
 
 model Notification {
-  id         String    @id @default(uuid(7))
-  tenantId   String    @map("tenant_id")
-  userId     String    @map("user_id")
-  type       String // approval_pending | workflow_completed | workflow_failed | risk_alert | mention | system
-  title      String
-  body       String?
-  linkUrl    String?   @map("link_url")
-  priority   String    @default("normal")
-  readAt     DateTime? @map("read_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id        String    @id @default(uuid(7))
+  tenantId  String    @map("tenant_id")
+  userId    String    @map("user_id")
+  type      String // approval_pending | workflow_completed | workflow_failed | risk_alert | mention | system
+  title     String
+  body      String?
+  linkUrl   String?   @map("link_url")
+  priority  String    @default("normal")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   @@index([tenantId, userId, createdAt])
   @@map("notifications")

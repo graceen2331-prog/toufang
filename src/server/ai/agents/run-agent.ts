@@ -1,14 +1,17 @@
 import "server-only";
 import type { z } from "zod";
-import { prisma } from "@/server/db/client";
 import { routerChat } from "@/server/ai/router";
 import type { PromptDefinition } from "@/server/ai/prompts/strategy";
 import type { ChatMessage } from "@/server/ai/router/types";
+import { publishAgentEvent } from "@/server/events/pubsub";
+import { agentMonitorRepository } from "@/server/modules/agent-monitor/agent-monitor.repository";
 
 export interface RunAgentOptions<TSchema extends z.ZodType> {
   tenantId: string;
   agentKey: string;
   workflowRunId?: string | null;
+  subjectType?: string | null;
+  subjectId?: string | null;
   prompt: PromptDefinition<TSchema>;
   userMessage: string;
   input?: Record<string, unknown>;
@@ -23,18 +26,19 @@ export interface RunAgentOptions<TSchema extends z.ZodType> {
 export async function runAgent<TSchema extends z.ZodType>(
   options: RunAgentOptions<TSchema>,
 ): Promise<{ output: z.infer<TSchema>; agentRunId: string }> {
-  const run = await prisma.agentRun.create({
-    data: {
-      tenantId: options.tenantId,
-      workflowRunId: options.workflowRunId ?? null,
-      agentKey: options.agentKey,
-      status: "running",
-      input: (options.input ?? {}) as object,
-      promptKey: options.prompt.key,
-      promptVersion: options.prompt.version,
-      createdBy: options.createdBy ?? null,
-    },
+  const run = await agentMonitorRepository.createRun({
+    tenantId: options.tenantId,
+    workflowRunId: options.workflowRunId ?? null,
+    agentKey: options.agentKey,
+    subjectType: options.subjectType ?? null,
+    subjectId: options.subjectId ?? null,
+    input: options.input ?? {},
+    promptSnapshot: { system: options.prompt.system, user: options.userMessage },
+    promptKey: options.prompt.key,
+    promptVersion: options.prompt.version,
+    createdBy: options.createdBy ?? null,
   });
+  await publishAgentEvent(run.id, { type: "run_status", status: "running" });
 
   try {
     const messages: ChatMessage[] = [
@@ -52,36 +56,44 @@ export async function runAgent<TSchema extends z.ZodType>(
       createdBy: options.createdBy ?? null,
     })) as z.infer<TSchema>;
 
-    // 补记 model（从 usage 事件取最近一条）
-    const lastUsage = await prisma.aiUsageEvent.findFirst({
-      where: { agentRunId: run.id },
-      orderBy: { createdAt: "desc" },
-      select: { model: true },
-    });
-    const committed = await prisma.agentRun.updateMany({
-      where: { id: run.id, tenantId: options.tenantId, status: "running" },
-      data: {
-        status: "completed",
-        output: output as object,
-        model: lastUsage?.model ?? null,
-        completedAt: new Date(),
-      },
-    });
-    if (committed.count === 0) {
-      console.info(`[agent] 丢弃已取消 Agent 的迟到结果：run=${run.id}`);
+    const model = await agentMonitorRepository.findLatestModel(options.tenantId, run.id);
+    const committed = await agentMonitorRepository.completeRun(
+      options.tenantId,
+      run.id,
+      output,
+      model,
+    );
+    if (committed) {
+      await publishAgentEvent(run.id, { type: "run_status", status: "completed" });
+    } else {
+      console.info(`[agent-monitor] 丢弃已取消 Agent 的迟到结果：run=${run.id}`);
     }
     return { output, agentRunId: run.id };
   } catch (err) {
-    const committed = await prisma.agentRun.updateMany({
-      where: { id: run.id, tenantId: options.tenantId, status: "running" },
-      data: {
-        status: "failed",
-        failureReason: err instanceof Error ? err.message : String(err),
-        completedAt: new Date(),
-      },
-    });
-    if (committed.count === 0) {
-      console.info(`[agent] 丢弃已取消 Agent 的迟到失败：run=${run.id}`);
+    const reason = err instanceof Error ? err.message : String(err);
+    const committed = await agentMonitorRepository.failRun(options.tenantId, run.id, reason);
+    if (committed) {
+      await publishAgentEvent(run.id, { type: "run_status", status: "failed", message: reason });
+    } else {
+      console.info(`[agent-monitor] 丢弃已取消 Agent 的迟到失败：run=${run.id}`);
+    }
+    if (committed && !options.workflowRunId && options.createdBy) {
+      try {
+        const { createNotificationForUser } = await import(
+          "@/server/modules/notification/notification.service"
+        );
+        await createNotificationForUser({
+          tenantId: options.tenantId,
+          userId: options.createdBy,
+          type: "risk_alert",
+          title: `Agent 运行失败：${options.agentKey}`,
+          body: reason,
+          linkUrl: `/ai-runs/agents/${run.id}`,
+          priority: "high",
+        });
+      } catch (notificationError) {
+        console.error("[agent-monitor] 失败通知写入失败", notificationError);
+      }
     }
     throw err;
   }

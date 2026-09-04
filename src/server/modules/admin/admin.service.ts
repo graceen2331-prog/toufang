@@ -1,13 +1,22 @@
 import "server-only";
+import { z } from "zod";
 import type { Prisma } from "@/generated/prisma/client";
 import { ApiError } from "@/server/api/envelope";
-import { monthlyAiSpend } from "@/server/ai/router";
+import {
+  getAiRuntimeSettings,
+  getPublicAiSettings,
+  mergePersistedAiSettings,
+  type AiRuntimeOverride,
+} from "@/server/ai/settings";
+import { defaultChatModel, monthlyAiSpend, routerChat } from "@/server/ai/router";
 import type { TenantCtx } from "@/server/modules/brand/brand.repository";
 import { PERMISSION_OPTIONS, type AdminRoleDto, type AdminUserDto } from "@/shared/schemas/admin";
 import type {
   AdminUserUpdateInput,
   AdminUsersPageDto,
   AiSettingsDto,
+  AiSettingsTestInput,
+  AiSettingsTestResultDto,
   AiSettingsUpdateInput,
   OrganizationSettingsDto,
   OrganizationUpdateInput,
@@ -19,6 +28,23 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+const AiSettingsTestOutputSchema = z.object({
+  ok: z.boolean(),
+  message: z.string(),
+});
+
+function toAiRuntimeOverride(input: AiSettingsTestInput): AiRuntimeOverride {
+  const override: AiRuntimeOverride = {};
+  if (input.provider) override.provider = input.provider;
+  if (input.base_url !== undefined) override.baseUrl = input.base_url;
+  if (input.chat_model !== undefined) override.chatModel = input.chat_model;
+  if (input.light_model !== undefined) override.lightModel = input.light_model;
+  if (input.embedding_model !== undefined) override.embeddingModel = input.embedding_model;
+  if (input.api_key?.trim()) override.apiKey = input.api_key.trim();
+  else if (input.clear_api_key) override.apiKey = null;
+  return override;
 }
 
 function roleToDto(role: {
@@ -113,7 +139,7 @@ export async function getAiSettings(ctx: TenantCtx): Promise<AiSettingsDto> {
   return {
     ai_monthly_budget_cents: org.aiMonthlyBudgetCents,
     month_spent_microcents: await monthlyAiSpend(ctx.orgId),
-    settings: asRecord(settings.ai),
+    settings: getPublicAiSettings(settings.ai),
   };
 }
 
@@ -124,14 +150,66 @@ export async function updateAiSettings(
   const org = await adminRepository.getOrganization(ctx);
   if (!org) throw new ApiError("TENANT_REQUIRED", "组织不存在");
   const settings = asRecord(org.settings);
+  const aiSettings = input.settings
+    ? mergePersistedAiSettings(settings.ai, input.settings)
+    : asRecord(settings.ai);
   await adminRepository.updateOrganization(ctx, {
     aiMonthlyBudgetCents: input.ai_monthly_budget_cents,
     settings: {
       ...settings,
-      ai: { ...asRecord(settings.ai), ...(input.settings ?? {}) },
+      ai: aiSettings,
     } as Prisma.InputJsonValue,
   });
   return getAiSettings(ctx);
+}
+
+export async function testAiSettings(
+  ctx: TenantCtx,
+  input: AiSettingsTestInput,
+): Promise<AiSettingsTestResultDto> {
+  const settingsOverride = toAiRuntimeOverride(input);
+  const runtime = await getAiRuntimeSettings(ctx.orgId, settingsOverride);
+  const model = defaultChatModel(runtime, true);
+  const start = Date.now();
+
+  try {
+    const output = await routerChat({
+      tenantId: ctx.orgId,
+      agentKey: "settings_test",
+      promptKey: "settings.test",
+      messages: [
+        {
+          role: "system",
+          content: "你是模型连接测试器。只输出合法 JSON，不要解释。",
+        },
+        {
+          role: "user",
+          content: '请输出 {"ok":true,"message":"连接正常"}。',
+        },
+      ],
+      outputSchema: AiSettingsTestOutputSchema,
+      light: true,
+      temperature: 0,
+      createdBy: ctx.userId ?? null,
+      settingsOverride,
+    });
+
+    return {
+      ok: output.ok,
+      provider: runtime.provider,
+      model,
+      latency_ms: Date.now() - start,
+      message: output.message || "连接正常",
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      provider: runtime.provider,
+      model,
+      latency_ms: Date.now() - start,
+      message: err instanceof Error ? err.message : "连接测试失败",
+    };
+  }
 }
 
 export async function getUserSettings(ctx: TenantCtx): Promise<UserSettingsDto> {

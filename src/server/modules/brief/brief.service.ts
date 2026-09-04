@@ -5,7 +5,12 @@ import { getUserNames } from "@/server/modules/user/user.repository";
 import type { TenantCtx } from "@/server/modules/brand/brand.repository";
 import { briefRepository } from "./brief.repository";
 import { BRIEF_STATUS, assertTransition } from "@/shared/constants/status";
-import type { BriefContent, BriefDto, BriefVersionDto } from "@/shared/schemas/brief";
+import {
+  BriefContentSchema,
+  type BriefContent,
+  type BriefDto,
+  type BriefVersionDto,
+} from "@/shared/schemas/brief";
 import type { BriefVersion } from "@/generated/prisma/client";
 
 function contentToPlainText(content: BriefContent): string {
@@ -25,10 +30,11 @@ function contentToPlainText(content: BriefContent): string {
 
 async function versionToDto(v: BriefVersion): Promise<BriefVersionDto> {
   const names = await getUserNames(v.createdBy ? [v.createdBy] : []);
+  const content = BriefContentSchema.parse(v.content);
   return {
     id: v.id,
     version: v.version,
-    content: v.content as unknown as BriefContent,
+    content,
     plain_text: v.plainText,
     change_summary: v.changeSummary,
     ai_generated: v.aiGenerated,

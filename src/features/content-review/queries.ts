@@ -8,6 +8,8 @@ import type {
   ContentAssetCreateInput,
   ContentAssetDto,
   ContentReviewDto,
+  ContentRewriteInput,
+  ContentRewriteResultDto,
 } from "@/shared/schemas/content-analytics";
 
 export interface ContentAssetFilters {
@@ -91,6 +93,22 @@ export function useStartContentReview() {
     onSuccess: (_run, vars) => {
       toast.success("AI 内容审核已启动");
       invalidate(vars.id);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useRewriteContentAsset() {
+  const invalidate = useInvalidateContent();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input?: ContentRewriteInput }) =>
+      apiFetch<ContentRewriteResultDto>(`/content-assets/${id}/rewrite`, {
+        method: "POST",
+        body: input ?? {},
+      }),
+    onSuccess: (result) => {
+      toast.success("AI 已生成修改稿，内容已重新提交");
+      invalidate(result.content_asset.id);
     },
     onError: (err) => toast.error(err.message),
   });

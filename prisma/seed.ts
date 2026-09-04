@@ -9,6 +9,8 @@ import { seedCreators } from "./seed-creators";
 import { seedCampaigns } from "./seed-campaigns";
 import { seedContentAnalytics } from "./seed-content-analytics";
 import { seedKnowledge } from "./seed-knowledge";
+import { seedBrandLeads } from "./seed-brand-leads";
+import { seedAgentMonitor } from "./seed-agent-monitor";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
@@ -174,6 +176,12 @@ async function main() {
 
   // ===== 知识库 / RAG + 通知 / 审计（seed v5）=====
   await seedKnowledge(prisma, org.id, admin.id);
+
+  // ===== Agent 运行监测（seed v6）=====
+  await seedAgentMonitor(prisma, org.id, admin.id);
+
+  // ===== CES 品牌机会雷达（seed v7）=====
+  await seedBrandLeads(prisma, org.id, admin.id);
 
   // ===== 组织二：北辰品牌部（验证租户隔离与多组织切换） =====
   const org2 = await upsertOrg("北辰品牌部", "beichen");

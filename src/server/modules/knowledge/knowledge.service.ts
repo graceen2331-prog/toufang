@@ -276,6 +276,7 @@ export async function answerKnowledgeQuestion(
   const { output, agentRunId } = await runAgent({
     tenantId: ctx.orgId,
     agentKey: "knowledge",
+    subjectType: "knowledge_query",
     prompt: knowledgeAnswerPrompt,
     userMessage: JSON.stringify({
       question: input.question,

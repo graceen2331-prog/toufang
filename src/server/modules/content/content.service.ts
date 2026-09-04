@@ -1,5 +1,7 @@
 import "server-only";
 import { ApiError, type Pagination } from "@/server/api/envelope";
+import { runAgent } from "@/server/ai/agents/run-agent";
+import { contentRewritePrompt, type ContentReviewOutput } from "@/server/ai/prompts/content-review";
 import { paginate } from "@/server/api/pagination";
 import { startWorkflow } from "@/server/workflows/engine";
 import { campaignRepository } from "@/server/modules/campaign/campaign.repository";
@@ -15,8 +17,9 @@ import type {
   ContentAssetDto,
   ContentReviewDto,
   ContentReviewFindingDto,
+  ContentRewriteInput,
+  ContentRewriteResultDto,
 } from "@/shared/schemas/content-analytics";
-import type { ContentReviewOutput } from "@/server/ai/prompts/content-review";
 import type { ContentReview, WorkflowRun } from "@/generated/prisma/client";
 import {
   contentRepository,
@@ -223,8 +226,10 @@ export async function transitionContentAssetStatus(
   if (asset.status === "in_review" && ["approved", "revision_requested", "rejected"].includes(to)) {
     throw new ApiError("CONFLICT", "请在审批中心完成内容审核，不能绕过审批门");
   }
-  if ((asset.status === "approved" || asset.status === "scheduled") &&
-      (to === "scheduled" || to === "published")) {
+  if (
+    (asset.status === "approved" || asset.status === "scheduled") &&
+    (to === "scheduled" || to === "published")
+  ) {
     const result = await contentRepository.publishWithApprovalEvidence({
       ctx,
       assetId: id,
@@ -303,7 +308,119 @@ export async function startContentReviewWorkflow(
   return workflowResponse(run);
 }
 
-export async function listContentReviews(ctx: TenantCtx, contentAssetId: string): Promise<ContentReviewDto[]> {
+export async function rewriteContentAssetWithAi(
+  ctx: TenantCtx,
+  contentAssetId: string,
+  input: ContentRewriteInput,
+): Promise<ContentRewriteResultDto> {
+  const asset = await contentRepository.findAsset(ctx, contentAssetId);
+  if (!asset) throw new ApiError("RESOURCE_NOT_FOUND", "内容资产不存在");
+  if (asset.status !== "revision_requested") {
+    throw new ApiError("CONFLICT", "只有已要求修改的内容可以用 AI 改稿");
+  }
+  if (!asset.brief?.currentVersion) {
+    throw new ApiError("VALIDATION_FAILED", "Brief 缺失：请先为该 Campaign 生成并批准 Brief");
+  }
+  if (!asset.caption && !asset.transcript) {
+    throw new ApiError("VALIDATION_FAILED", "内容正文为空，无法生成修改稿");
+  }
+
+  const review = asset.reviews.find((row) => row.status === "completed") ?? asset.reviews[0];
+  const findings = review ? findingsFromJson(review.findings) : [];
+  const feedback = review?.feedback ?? null;
+  if (!review || (findings.length === 0 && !feedback)) {
+    throw new ApiError("CONFLICT", "没有可用于改稿的审核建议");
+  }
+
+  const { output, agentRunId } = await runAgent({
+    tenantId: ctx.orgId,
+    agentKey: "content_rewrite",
+    subjectType: "content_asset",
+    subjectId: contentAssetId,
+    prompt: contentRewritePrompt,
+    input: {
+      content_asset_id: contentAssetId,
+      review_id: review.id,
+      instruction: input.instruction ?? null,
+    },
+    userMessage: `请根据审核建议生成修改稿：\n\n${JSON.stringify(
+      {
+        content_asset: {
+          id: asset.id,
+          title: asset.title,
+          content_type: asset.contentType,
+          platform: asset.platform,
+          caption: asset.caption,
+          transcript: asset.transcript,
+          url: asset.url,
+        },
+        campaign: {
+          id: asset.campaignCreator.campaign.id,
+          name: asset.campaignCreator.campaign.name,
+          objective: asset.campaignCreator.campaign.objective,
+          goals: asset.campaignCreator.campaign.goals,
+        },
+        creator: {
+          id: asset.campaignCreator.creator.id,
+          display_name: asset.campaignCreator.creator.displayName,
+        },
+        brief: {
+          id: asset.brief.id,
+          title: asset.brief.title,
+          content: asset.brief.currentVersion.content,
+          plain_text: asset.brief.currentVersion.plainText,
+        },
+        brand: {
+          name: asset.campaignCreator.campaign.brand.name,
+          guidelines: asset.campaignCreator.campaign.brand.guidelines,
+          restricted_terms: asset.campaignCreator.campaign.brand.restrictedTerms,
+        },
+        review: {
+          id: review.id,
+          decision: review.decision,
+          risk_level: review.riskLevel,
+          findings,
+          feedback,
+        },
+        instruction: input.instruction ?? null,
+      },
+      null,
+      2,
+    )}`,
+    createdBy: ctx.userId ?? null,
+  });
+
+  assertTransition(CONTENT_ASSET_STATUS, asset.status, "submitted");
+  const transitioned = await contentRepository.transitionAsset(
+    ctx,
+    contentAssetId,
+    asset.status,
+    "submitted",
+    `AI 已按审核建议生成修改稿：${output.change_summary.slice(0, 2).join("；")}`,
+    {
+      caption: output.revised_caption ?? asset.caption,
+      transcript: output.revised_transcript ?? asset.transcript,
+      activeReviewId: null,
+      approvedReviewId: null,
+      approvedCheckpointId: null,
+      approvedContentHash: null,
+      contentApprovedAt: null,
+    },
+  );
+  if (!transitioned) throw new ApiError("CONFLICT", "内容状态已变化，请重新生成修改稿");
+
+  return {
+    content_asset: await getContentAsset(ctx, contentAssetId),
+    agent_run_id: agentRunId,
+    change_summary: output.change_summary,
+    creator_message: output.creator_message,
+  };
+}
+
+export async function listContentReviews(
+  ctx: TenantCtx,
+  contentAssetId: string,
+): Promise<ContentReviewDto[]> {
   const asset = await contentRepository.findAsset(ctx, contentAssetId);
   if (!asset) throw new ApiError("RESOURCE_NOT_FOUND", "内容资产不存在");
   const reviews = await contentRepository.listReviews(ctx, contentAssetId);
@@ -315,7 +432,13 @@ export async function markReviewReviewing(ctx: TenantCtx, reviewId: string): Pro
   if (!review) throw new Error("内容审核记录不存在");
   if (review.status === "reviewing") return;
   assertTransition(CONTENT_REVIEW_STATUS, review.status, "reviewing");
-  await contentRepository.transitionReview(ctx, reviewId, review.status, "reviewing", "AI 开始审核");
+  await contentRepository.transitionReview(
+    ctx,
+    reviewId,
+    review.status,
+    "reviewing",
+    "AI 开始审核",
+  );
 }
 
 export async function completeReviewFromWorkflow(
@@ -334,19 +457,26 @@ export async function completeReviewFromWorkflow(
   if (!review) throw new Error("内容审核记录不存在");
   if (review.status !== "completed") {
     assertTransition(CONTENT_REVIEW_STATUS, review.status, "completed");
-    await contentRepository.transitionReview(ctx, reviewId, review.status, "completed", "AI 审核完成并通过人工复核", {
-      decision: output.decision,
-      riskLevel: output.risk_level,
-      findings: output.findings as object,
-      feedback: output.creator_feedback,
-      reviewerId: ctx.userId ?? null,
-      aiGenerated: true,
-      agentRunId,
-      promptKey: agentRun?.promptKey ?? null,
-      promptVersion: agentRun?.promptVersion ?? null,
-      model: agentRun?.model ?? null,
-      completedAt: new Date(),
-    });
+    await contentRepository.transitionReview(
+      ctx,
+      reviewId,
+      review.status,
+      "completed",
+      "AI 审核完成并通过人工复核",
+      {
+        decision: output.decision,
+        riskLevel: output.risk_level,
+        findings: output.findings as object,
+        feedback: output.creator_feedback,
+        reviewerId: ctx.userId ?? null,
+        aiGenerated: true,
+        agentRunId,
+        promptKey: agentRun?.promptKey ?? null,
+        promptVersion: agentRun?.promptVersion ?? null,
+        model: agentRun?.model ?? null,
+        completedAt: new Date(),
+      },
+    );
   }
 
   const target =
@@ -358,11 +488,23 @@ export async function completeReviewFromWorkflow(
   if (asset.status !== target) {
     let fromStatus = asset.status;
     if (fromStatus === "submitted") {
-      await contentRepository.transitionAsset(ctx, contentAssetId, "submitted", "in_review", "内容审核结果补齐审核中状态");
+      await contentRepository.transitionAsset(
+        ctx,
+        contentAssetId,
+        "submitted",
+        "in_review",
+        "内容审核结果补齐审核中状态",
+      );
       fromStatus = "in_review";
     }
     assertTransition(CONTENT_ASSET_STATUS, fromStatus, target);
-    await contentRepository.transitionAsset(ctx, contentAssetId, fromStatus, target, "内容审核结果落地");
+    await contentRepository.transitionAsset(
+      ctx,
+      contentAssetId,
+      fromStatus,
+      target,
+      "内容审核结果落地",
+    );
   }
 
   const nextSubStatus = output.decision === "approved" ? "approved" : "submitted";
@@ -390,17 +532,30 @@ export async function rejectReviewFromWorkflow(
   if (reviewId) {
     const review = await contentRepository.findReview(ctx, reviewId);
     if (review && review.status !== "completed") {
-      await contentRepository.transitionReview(ctx, review.id, review.status, "completed", "人工未通过内容审核", {
-        decision: "needs_revision",
-        riskLevel: "high",
-        feedback: reason ?? "请根据审批意见修改后重新提交。",
-        reviewerId: ctx.userId ?? null,
-        completedAt: new Date(),
-      });
+      await contentRepository.transitionReview(
+        ctx,
+        review.id,
+        review.status,
+        "completed",
+        "人工未通过内容审核",
+        {
+          decision: "needs_revision",
+          riskLevel: "high",
+          feedback: reason ?? "请根据审批意见修改后重新提交。",
+          reviewerId: ctx.userId ?? null,
+          completedAt: new Date(),
+        },
+      );
     }
   }
   if (asset.status === "in_review") {
-    await contentRepository.transitionAsset(ctx, contentAssetId, "in_review", "revision_requested", reason ?? "内容审核未通过");
+    await contentRepository.transitionAsset(
+      ctx,
+      contentAssetId,
+      "in_review",
+      "revision_requested",
+      reason ?? "内容审核未通过",
+    );
   }
 }
 

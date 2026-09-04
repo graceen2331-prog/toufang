@@ -55,12 +55,22 @@ const asset = {
   deletedAt: null,
   reviews: [],
   pendingWorkflow: null,
-  brief: { id: "brief-1", title: "Brief", currentVersion: {} },
+  brief: {
+    id: "brief-1",
+    title: "Brief",
+    currentVersion: { content: { title: "Brief" }, plainText: "请避免医疗化功效表达。" },
+  },
   campaignCreator: {
     id: "cc-1",
     contentStatus: "submitted",
-    campaign: { id: "campaign-1", name: "Campaign" },
-    creator: { displayName: "林小鹿" },
+    campaign: {
+      id: "campaign-1",
+      name: "Campaign",
+      objective: "双十一种草",
+      goals: { views: 100000 },
+      brand: { name: "GlowLab", guidelines: {}, restrictedTerms: ["治愈"] },
+    },
+    creator: { id: "creator-1", displayName: "林小鹿" },
   },
 };
 
@@ -98,7 +108,11 @@ describe("内容审核审批门", () => {
     const { transitionContentAssetStatus } = await import("./content.service");
 
     await expect(
-      transitionContentAssetStatus({ orgId: "org-1", userId: "user-1" }, "asset-1", "revision_requested"),
+      transitionContentAssetStatus(
+        { orgId: "org-1", userId: "user-1" },
+        "asset-1",
+        "revision_requested",
+      ),
     ).rejects.toMatchObject({ code: "CONFLICT" });
     expect(transitionAsset).not.toHaveBeenCalled();
   });
@@ -114,7 +128,10 @@ describe("内容审核审批门", () => {
     );
 
     expect(result.workflow_run_id).toBe("run-1");
-    expect(createQueuedReview).toHaveBeenCalledWith({ orgId: "org-1", userId: "user-1" }, "asset-1");
+    expect(createQueuedReview).toHaveBeenCalledWith(
+      { orgId: "org-1", userId: "user-1" },
+      "asset-1",
+    );
     expect(startWorkflow).toHaveBeenCalledWith(
       { orgId: "org-1", userId: "user-1" },
       {
@@ -167,5 +184,83 @@ describe("内容审核审批门", () => {
       startContentReviewWorkflow({ orgId: "org-1", userId: "user-1" }, "asset-1"),
     ).rejects.toThrow("未注册的工作流");
     expect(transitionAsset).not.toHaveBeenCalled();
+  });
+
+  it("AI 按审核建议改稿后把内容重新提交", async () => {
+    const review = {
+      id: "review-1",
+      status: "completed",
+      decision: "needs_revision",
+      riskLevel: "high",
+      findings: [
+        {
+          type: "restricted_term",
+          severity: "high",
+          quote: "治愈暗沉",
+          issue: "含医疗化表达",
+          suggestion: "改为温和提亮肤色",
+        },
+      ],
+      feedback: "请删除医疗化表达并补充 CTA。",
+      reviewerId: "user-1",
+      aiGenerated: true,
+      model: "fake-model",
+      promptKey: "content_review.evaluate",
+      promptVersion: "v1",
+      completedAt: new Date("2026-07-04T00:10:00.000Z"),
+      createdAt: new Date("2026-07-04T00:00:00.000Z"),
+    };
+    findAsset
+      .mockResolvedValueOnce({ ...asset, status: "revision_requested", reviews: [review] })
+      .mockResolvedValueOnce({
+        ...asset,
+        status: "submitted",
+        caption: "改好的标题文案",
+        transcript: "改好的口播稿",
+        reviews: [review],
+      });
+    const { rewriteContentAssetWithAi } = await import("./content.service");
+
+    const result = await rewriteContentAssetWithAi(
+      { orgId: "org-1", userId: "user-1" },
+      "asset-1",
+      {},
+    );
+
+    expect(runAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "org-1",
+        agentKey: "content_rewrite",
+        createdBy: "user-1",
+      }),
+    );
+    expect(transitionAsset).toHaveBeenCalledWith(
+      { orgId: "org-1", userId: "user-1" },
+      "asset-1",
+      "revision_requested",
+      "submitted",
+      expect.stringContaining("AI 已按审核建议生成修改稿"),
+      {
+        caption: "改好的标题文案",
+        transcript: "改好的口播稿",
+        activeReviewId: null,
+        approvedReviewId: null,
+        approvedCheckpointId: null,
+        approvedContentHash: null,
+        contentApprovedAt: null,
+      },
+    );
+    expect(result.agent_run_id).toBe("agent-1");
+    expect(result.content_asset.status).toBe("submitted");
+  });
+
+  it("非需修改状态不能直接 AI 改稿", async () => {
+    findAsset.mockResolvedValue({ ...asset, status: "approved" });
+    const { rewriteContentAssetWithAi } = await import("./content.service");
+
+    await expect(
+      rewriteContentAssetWithAi({ orgId: "org-1", userId: "user-1" }, "asset-1", {}),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(runAgent).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,7 @@ import { PermissionGate } from "@/components/shared/permission-gate";
 import { useDecideApproval } from "@/features/approvals/queries";
 import {
   contentReviewKeys,
+  useRewriteContentAsset,
   useStartContentReview,
 } from "@/features/content-review/queries";
 import { useCancelWorkflow, useWorkflowRun } from "@/features/workflows/queries";
@@ -31,6 +32,8 @@ const severityLabel: Record<string, string> = {
   medium: "中",
   high: "高",
 };
+
+import { WandSparkles } from "lucide-react";
 
 function FindingList({ findings }: { findings: ContentReviewFindingDto[] }) {
   if (findings.length === 0) {
@@ -147,6 +150,7 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const startReview = useStartContentReview();
+  const rewrite = useRewriteContentAsset();
   const decide = useDecideApproval();
   const queryClient = useQueryClient();
 
@@ -163,7 +167,7 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
 
   const findings = asset.pending_findings.length
     ? asset.pending_findings
-    : asset.latest_review?.findings ?? [];
+    : (asset.latest_review?.findings ?? []);
   const feedback = asset.pending_feedback ?? asset.latest_review?.feedback ?? null;
   const hasHighRisk = findings.some((finding) => finding.severity === "high");
   const blockingFindings = findings.filter(
@@ -174,6 +178,10 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
     .map((finding) => finding.id!);
   const hasActiveWorkflow = !!asset.pending_workflow_run_id;
   const canRetryStalledReview = asset.status === "in_review" && !hasActiveWorkflow;
+  const canRewrite =
+    asset.status === "revision_requested" &&
+    !hasActiveWorkflow &&
+    (findings.length > 0 || Boolean(feedback));
   const canStart =
     !!asset.brief_id &&
     !hasActiveWorkflow &&
@@ -279,6 +287,16 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
                 </Button>
               </>
             )}
+            {canRewrite && (
+              <Button
+                variant="outline"
+                disabled={rewrite.isPending}
+                onClick={() => rewrite.mutate({ id: asset.id })}
+              >
+                <WandSparkles className="size-4" />
+                AI 按建议改稿
+              </Button>
+            )}
           </div>
         </PermissionGate>
 
@@ -291,13 +309,31 @@ export function ReviewFindingsPanel({ asset }: { asset: ContentAssetDto | null }
         )}
         {canRetryStalledReview && (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            上一次 AI 审核未产生可处理的审批项，内容仍停在审核中。请重新发起审核，系统会创建新的复核流程。
+            {
+              "上一次 AI 审核未产生可处理的审批项，内容仍停在审核中。请重新发起审核，系统会创建新的复核流程。"
+            }
           </p>
         )}
         {feedback && (
           <div className="rounded-lg bg-muted p-3">
             <p className="text-xs font-medium text-muted-foreground">给达人的修改说明</p>
             <p className="mt-1 text-sm leading-6">{feedback}</p>
+          </div>
+        )}
+        {blockingFindings.length > 0 && pendingCheckpointId && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+            内容命中品牌禁词或 Brief 的确定性规则，当前审核不能直接批准。请要求修改后重新提交审核。
+          </p>
+        )}
+        {rewrite.data && (
+          <div className="rounded-lg border bg-card p-3">
+            <p className="text-xs font-medium text-muted-foreground">AI 改稿摘要</p>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-sm leading-6">
+              {rewrite.data.change_summary.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <p className="mt-2 text-sm leading-6">{rewrite.data.creator_message}</p>
           </div>
         )}
         <FindingList findings={findings} />

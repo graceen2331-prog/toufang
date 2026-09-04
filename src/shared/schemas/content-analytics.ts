@@ -22,6 +22,11 @@ export const ContentReviewTriggerSchema = z.object({
   instruction: z.string().max(500).nullish(),
 });
 
+export const ContentRewriteSchema = z.object({
+  instruction: z.string().max(800).nullish(),
+});
+export type ContentRewriteInput = z.infer<typeof ContentRewriteSchema>;
+
 export const MetricUpsertSchema = z.object({
   entity_type: z.enum(["campaign", "campaign_creator", "content_asset"]),
   entity_id: z.string().min(1),
@@ -146,6 +151,13 @@ export interface ContentAssetDto {
   pending_feedback: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ContentRewriteResultDto {
+  content_asset: ContentAssetDto;
+  agent_run_id: string;
+  change_summary: string[];
+  creator_message: string;
 }
 
 export interface MetricDto {

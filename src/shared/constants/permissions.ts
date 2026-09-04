@@ -42,6 +42,8 @@ export const PERMISSIONS = {
   // AI
   "ai:run": "运行 AI 任务",
   "ai:monitor": "查看 AI 运行监控",
+  "admin:ai_trace": "查看 AI 运行完整上下文",
+  "admin:ai_infrastructure": "查看 AI 队列与 Worker 健康",
   // 审批
   "approval:read": "查看审批",
   "approval:decide": "处理审批",

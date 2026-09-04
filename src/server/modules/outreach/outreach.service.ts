@@ -225,6 +225,8 @@ export async function draftOutreachMessage(
   const { output, agentRunId } = await runAgent({
     tenantId: ctx.orgId,
     agentKey: "outreach",
+    subjectType: "outreach_thread",
+    subjectId: threadId,
     prompt: outreachPrompt,
     userMessage: `请起草外联消息：\n${JSON.stringify(context, null, 2)}`,
     createdBy: ctx.userId ?? null,
@@ -399,6 +401,8 @@ export async function analyzeNegotiation(
   const { output, agentRunId } = await runAgent({
     tenantId: ctx.orgId,
     agentKey: "negotiation",
+    subjectType: "outreach_thread",
+    subjectId: threadId,
     prompt: negotiationPrompt,
     userMessage: `请分析这条达人回复并给出谈判建议：\n${JSON.stringify(context, null, 2)}`,
     createdBy: ctx.userId ?? null,

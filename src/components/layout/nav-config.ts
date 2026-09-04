@@ -4,6 +4,7 @@ import {
   BookOpen,
   Bot,
   CheckSquare,
+  Radar,
   LayoutDashboard,
   Megaphone,
   MessageSquare,
@@ -42,6 +43,7 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "营销执行",
     items: [
       { title: "Campaign", href: "/campaigns", icon: Megaphone, permission: "campaign:read" },
+      { title: "品牌机会雷达", href: "/brand-leads", icon: Radar, permission: "brand:read" },
       { title: "达人库", href: "/creators", icon: Users, permission: "creator:read" },
       { title: "外联工作台", href: "/outreach", icon: MessageSquare, permission: "outreach:read" },
       { title: "内容审核", href: "/content-review", icon: CheckSquare, permission: "content:review" },
@@ -81,6 +83,7 @@ export const NAV_GROUPS: NavGroup[] = [
 export const IMPLEMENTED_ROUTES = new Set([
   "/dashboard",
   "/brands",
+  "/brand-leads",
   "/creators",
   "/campaigns",
   "/outreach",

@@ -104,14 +104,12 @@ export function WorkflowProgress({
           <ShieldCheck className="size-4 shrink-0" />
           <span className="flex-1">
             {inlineApproval
-              ? "工作流已暂停，请在当前 Campaign 的待办栏处理审批后继续执行。"
+              ? "工作流已暂停，等待人工审批；请在当前 Campaign 的待办栏处理后继续执行。"
               : "工作流已暂停，等待人工审批后继续执行。"}
           </span>
-          {!inlineApproval && (
-            <Button asChild size="sm" variant="outline">
-              <Link href="/approvals">前往审批中心</Link>
-            </Button>
-          )}
+          <Button asChild size="sm" variant="outline">
+            <Link href="/approvals">前往审批中心</Link>
+          </Button>
         </div>
       )}
 

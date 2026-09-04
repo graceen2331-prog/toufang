@@ -444,6 +444,13 @@ export const AGENT_RUN_STATUS: Record<string, StatusMeta> = {
   running: { label: "运行中", tone: "progress" },
   completed: { label: "已完成", tone: "success" },
   failed: { label: "失败", tone: "danger" },
+  cancelled: { label: "已取消", tone: "neutral" },
+};
+
+export const AGENT_CALL_STATUS: Record<string, StatusMeta> = {
+  running: { label: "调用中", tone: "progress" },
+  completed: { label: "已返回", tone: "success" },
+  failed: { label: "调用失败", tone: "danger" },
 };
 
 export const CHECKPOINT_STATUS: Record<string, StatusMeta> = {

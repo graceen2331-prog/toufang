@@ -190,7 +190,9 @@ export default function AiRunDetailPage({ params }: { params: Promise<{ id: stri
                         </TableCell>
                         <TableCell className="font-mono text-xs">{agent.model ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatDuration(agent.started_at, agent.completed_at)}
+                          <Link className="text-primary underline-offset-4 hover:underline" href={`/ai-runs/agents/${agent.id}`}>
+                            {formatDuration(agent.started_at, agent.completed_at)}
+                          </Link>
                         </TableCell>
                       </TableRow>
                     ))}

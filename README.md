@@ -20,9 +20,9 @@ docker compose up -d
 # 2. 安装依赖
 pnpm install
 
-# 3. 配置环境变量
+# 3. 配置基础环境变量
 cp .env.example .env
-# 本地验收默认使用 MODEL_PROVIDER=fake；接真实 AI 时填写 OPENAI_API_KEY 并改为 MODEL_PROVIDER=openai
+# 模型 Provider / API Key / Base URL 登录后在「Admin → AI 设置」页面填写
 
 # 4. 初始化数据库 + 演示数据
 pnpm db:reset && pnpm seed
@@ -46,15 +46,15 @@ pnpm dev:worker   # 后台 Worker（工作流 / RAG / 通知）
 
 ## 常用脚本
 
-| 命令 | 说明 |
-|---|---|
-| `pnpm check` | typecheck + lint + 单元测试（CI 入口） |
-| `pnpm test` / `pnpm test:watch` | Vitest 单元测试 |
-| `pnpm e2e` | Playwright 端到端测试（runner 会托管 Next dev + worker，并设置 `MODEL_PROVIDER=fake`） |
-| `pnpm db:migrate` | 开发迁移 |
-| `pnpm db:reset` | 重置数据库（危险） |
-| `pnpm seed` | 写入中文演示数据 |
-| `pnpm db:studio` | Prisma Studio |
+| 命令                            | 说明                                                                                   |
+| ------------------------------- | -------------------------------------------------------------------------------------- |
+| `pnpm check`                    | typecheck + lint + 单元测试（CI 入口）                                                 |
+| `pnpm test` / `pnpm test:watch` | Vitest 单元测试                                                                        |
+| `pnpm e2e`                      | Playwright 端到端测试（runner 会托管 Next dev + worker，并设置 `MODEL_PROVIDER=fake`） |
+| `pnpm db:migrate`               | 开发迁移                                                                               |
+| `pnpm db:reset`                 | 重置数据库（危险）                                                                     |
+| `pnpm seed`                     | 写入中文演示数据                                                                       |
+| `pnpm db:studio`                | Prisma Studio                                                                          |
 
 ## 本地验收剧本
 
@@ -75,7 +75,7 @@ pnpm e2e
 pnpm e2e e2e/w9-acceptance.spec.ts
 ```
 
-手工演示时保持两个终端：
+手工演示时保持两个终端；如果还没有在页面保存模型配置，可临时用 fake provider 回退：
 
 ```bash
 MODEL_PROVIDER=fake pnpm dev
@@ -99,7 +99,7 @@ MODEL_PROVIDER=fake pnpm dev:worker
 8. 生成 Campaign 分析报告，审批后进入报告页导出。
 9. 抽查 AI 运行、审计日志、知识问答引用、移动端内容审核/审批页、viewer Admin 权限拒绝、双组织数据隔离。
 
-接真实模型时，把 `.env` 里的 `MODEL_PROVIDER` 改为 `openai` 并填写 `OPENAI_API_KEY`。真实 AI 链路建议先只走 W9 手工剧本，确认策略/Brief/内容审核/分析报告的输出质量和成本记录，再扩大到全量回归。
+接真实模型时，用管理员账号进入「Admin → AI 设置」，选择 `OpenAI / 兼容接口`，填写 API Key、Base URL、默认对话模型、轻量模型和向量模型，先点击「测试连接」确认通过，再保存。`.env` 中的模型变量只作为本地/CI 兼容回退；真实业务配置以组织级页面配置为准。
 
 ## 目录结构
 

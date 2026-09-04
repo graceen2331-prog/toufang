@@ -18,6 +18,7 @@ const integrationTests = [
   "src/server/modules/analytics/analytics-report.integration.test.ts",
   "src/server/modules/contract/payment-integrity.integration.test.ts",
   "src/server/modules/content/content-approval.integration.test.ts",
+  "src/server/modules/brand-lead/brand-lead-conversion.integration.test.ts",
   "src/server/workflows/engine.integration.test.ts",
 ];
 
@@ -175,12 +176,7 @@ async function main() {
     RUN_INTEGRATION_TESTS: "1",
   };
   await runCommand("迁移集成测试数据库", "pnpm", ["exec", "prisma", "migrate", "deploy"], env);
-  await runCommand(
-    "数据库集成测试",
-    "pnpm",
-    ["exec", "vitest", "run", ...integrationTests],
-    env,
-  );
+  await runCommand("数据库集成测试", "pnpm", ["exec", "vitest", "run", ...integrationTests], env);
 }
 
 process.on("SIGINT", () => void shutdown(130));

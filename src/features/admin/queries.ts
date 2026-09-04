@@ -8,6 +8,8 @@ import type {
   AdminUserUpdateInput,
   AdminUsersPageDto,
   AiSettingsDto,
+  AiSettingsTestInput,
+  AiSettingsTestResultDto,
   AiSettingsUpdateInput,
   OrganizationSettingsDto,
   OrganizationUpdateInput,
@@ -74,6 +76,24 @@ export function useUpdateAiSettings() {
     onSuccess: () => {
       toast.success("AI 设置已保存");
       void queryClient.invalidateQueries({ queryKey: adminKeys.aiSettings });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useTestAiSettings() {
+  return useMutation({
+    mutationFn: (input: AiSettingsTestInput) =>
+      apiFetch<AiSettingsTestResultDto>("/admin/ai/settings/test", {
+        method: "POST",
+        body: input,
+      }),
+    onSuccess: (result) => {
+      if (result.ok) {
+        toast.success(`连接测试成功：${result.model}`);
+      } else {
+        toast.error(result.message);
+      }
     },
     onError: (err) => toast.error(err.message),
   });

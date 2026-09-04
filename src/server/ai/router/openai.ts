@@ -1,15 +1,19 @@
 import "server-only";
 import OpenAI from "openai";
-import { ProviderError, type ChatRequest, type ChatResponse, type ModelProvider } from "./types";
+import {
+  ProviderError,
+  type ChatRequest,
+  type ChatResponse,
+  type ModelProvider,
+  type ProviderConfig,
+} from "./types";
 
-let client: OpenAI | null = null;
-
-function getClient(): OpenAI {
-  if (!process.env.OPENAI_API_KEY) {
+function getClient(config: ProviderConfig = {}): OpenAI {
+  const apiKey = config.apiKey || (config.baseUrl ? "not-needed" : null);
+  if (!apiKey) {
     throw new ProviderError("OPENAI_API_KEY 未配置", false);
   }
-  client ??= new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return client;
+  return new OpenAI({ apiKey, ...(config.baseUrl ? { baseURL: config.baseUrl } : {}) });
 }
 
 function mapError(err: unknown): ProviderError {
@@ -25,7 +29,10 @@ export const openaiProvider: ModelProvider = {
 
   async chat(req: ChatRequest): Promise<ChatResponse> {
     try {
-      const completion = await getClient().chat.completions.create({
+      const completion = await getClient({
+        apiKey: req.apiKey,
+        baseUrl: req.baseUrl,
+      }).chat.completions.create({
         model: req.model,
         messages: req.messages,
         ...(req.json ? { response_format: { type: "json_object" as const } } : {}),
@@ -50,9 +57,9 @@ export const openaiProvider: ModelProvider = {
     }
   },
 
-  async embed(texts: string[], model: string) {
+  async embed(texts: string[], model: string, config?: ProviderConfig) {
     try {
-      const res = await getClient().embeddings.create({ model, input: texts });
+      const res = await getClient(config).embeddings.create({ model, input: texts });
       return {
         vectors: res.data.map((d) => d.embedding),
         usage: { inputTokens: res.usage?.prompt_tokens ?? 0, outputTokens: 0 },

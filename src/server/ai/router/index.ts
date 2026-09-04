@@ -2,6 +2,10 @@ import "server-only";
 import type { ZodType } from "zod";
 import { prisma } from "@/server/db/client";
 import { ApiError } from "@/server/api/envelope";
+import { getAiRuntimeSettings, type AiRuntimeOverride } from "@/server/ai/settings";
+import { publishAgentEvent } from "@/server/events/pubsub";
+import { agentMonitorRepository } from "@/server/modules/agent-monitor/agent-monitor.repository";
+import { classifyAgentError } from "@/server/modules/agent-monitor/agent-monitor.utils";
 import { openaiProvider } from "./openai";
 import { fakeProvider } from "./fake";
 import { ProviderError, type ChatMessage, type ModelProvider } from "./types";
@@ -20,8 +24,7 @@ function costMicrocents(model: string, inputTokens: number, outputTokens: number
   return Math.round(inputTokens * price.input * 100 + outputTokens * price.output * 100);
 }
 
-function getProvider(): ModelProvider {
-  const name = process.env.MODEL_PROVIDER ?? "openai";
+function getProvider(name: string): ModelProvider {
   switch (name) {
     case "openai":
       return openaiProvider;
@@ -29,22 +32,26 @@ function getProvider(): ModelProvider {
       return fakeProvider;
     case "anthropic":
     case "gemini":
-      throw new ApiError("AI_PROVIDER_NOT_CONFIGURED", `${name} Provider 尚未实现，请在 ModelRouter 中扩展`);
+      throw new ApiError(
+        "AI_PROVIDER_NOT_CONFIGURED",
+        `${name} Provider 尚未实现，请在 ModelRouter 中扩展`,
+      );
     default:
       throw new ApiError("AI_PROVIDER_NOT_CONFIGURED", `未知 Provider: ${name}`);
   }
 }
 
-export function defaultChatModel(light = false): string {
-  if ((process.env.MODEL_PROVIDER ?? "openai") === "fake") return "fake-model";
-  return light
-    ? (process.env.OPENAI_CHAT_MODEL_LIGHT ?? "gpt-4.1-mini")
-    : (process.env.OPENAI_CHAT_MODEL ?? "gpt-4.1");
+export function defaultChatModel(
+  settings: { provider: string; chatModel: string; lightModel: string },
+  light = false,
+): string {
+  if (settings.provider === "fake") return "fake-model";
+  return light ? settings.lightModel : settings.chatModel;
 }
 
-export function embeddingModel(): string {
-  if ((process.env.MODEL_PROVIDER ?? "openai") === "fake") return "fake-model";
-  return process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small";
+export function embeddingModel(settings: { provider: string; embeddingModel: string }): string {
+  if (settings.provider === "fake") return "fake-model";
+  return settings.embeddingModel;
 }
 
 /** 当月已消耗 AI 成本（microcents） */
@@ -111,16 +118,131 @@ export interface RouterChatOptions<T> {
   light?: boolean;
   temperature?: number;
   createdBy?: string | null;
+  settingsOverride?: AiRuntimeOverride;
 }
 
 const MAX_PROVIDER_RETRIES = 2;
 
-async function callWithRetry(provider: ModelProvider, req: Parameters<ModelProvider["chat"]>[0]) {
+interface AgentCallTraceContext {
+  tenantId: string;
+  agentRunId: string;
+  phase: "primary" | "repair";
+}
+
+async function startCallTrace(
+  provider: ModelProvider,
+  req: Parameters<ModelProvider["chat"]>[0],
+  trace: AgentCallTraceContext | undefined,
+  attempt: number,
+): Promise<string | null> {
+  if (!trace) return null;
+  try {
+    const call = await agentMonitorRepository.createCall({
+      tenantId: trace.tenantId,
+      agentRunId: trace.agentRunId,
+      phase: trace.phase,
+      attempt,
+      provider: provider.name,
+      model: req.model,
+      requestPayload: {
+        prompt_key: req.promptKey ?? null,
+        message_count: req.messages.length,
+        roles: req.messages.map((message) => message.role),
+        json_mode: req.json ?? false,
+        temperature: req.temperature ?? null,
+      },
+    });
+    await publishAgentEvent(trace.agentRunId, {
+      type: "call_status",
+      status: "running",
+      call_id: call.id,
+      phase: trace.phase,
+      attempt,
+    });
+    return call.id;
+  } catch (error) {
+    console.error("[agent-monitor] 模型调用追踪创建失败", error);
+    return null;
+  }
+}
+
+async function completeCallTrace(
+  trace: AgentCallTraceContext | undefined,
+  callId: string | null,
+  response: Awaited<ReturnType<ModelProvider["chat"]>>,
+  latencyMs: number,
+): Promise<void> {
+  if (!trace || !callId) return;
+  try {
+    await agentMonitorRepository.completeCall({
+      tenantId: trace.tenantId,
+      callId,
+      model: response.model,
+      responsePayload: { content: response.content },
+      inputTokens: response.usage.inputTokens,
+      outputTokens: response.usage.outputTokens,
+      costMicrocents: costMicrocents(
+        response.model,
+        response.usage.inputTokens,
+        response.usage.outputTokens,
+      ),
+      latencyMs,
+    });
+    await publishAgentEvent(trace.agentRunId, {
+      type: "call_status",
+      status: "completed",
+      call_id: callId,
+      phase: trace.phase,
+    });
+  } catch (error) {
+    console.error("[agent-monitor] 模型调用追踪完成写入失败", error);
+  }
+}
+
+async function failCallTrace(
+  trace: AgentCallTraceContext | undefined,
+  callId: string | null,
+  error: unknown,
+  latencyMs: number,
+): Promise<void> {
+  if (!trace || !callId) return;
+  try {
+    const classified = classifyAgentError(error);
+    await agentMonitorRepository.failCall({
+      tenantId: trace.tenantId,
+      callId,
+      latencyMs,
+      errorType: classified.type,
+      errorCode: classified.code,
+      errorMessage: classified.message,
+    });
+    await publishAgentEvent(trace.agentRunId, {
+      type: "call_status",
+      status: "failed",
+      call_id: callId,
+      phase: trace.phase,
+      message: classified.message,
+    });
+  } catch (traceError) {
+    console.error("[agent-monitor] 模型调用失败追踪写入失败", traceError);
+  }
+}
+
+async function callWithRetry(
+  provider: ModelProvider,
+  req: Parameters<ModelProvider["chat"]>[0],
+  trace?: AgentCallTraceContext,
+) {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= MAX_PROVIDER_RETRIES; attempt++) {
+    const startedAt = Date.now();
+    const callId = await startCallTrace(provider, req, trace, attempt + 1);
     try {
-      return await provider.chat(req);
+      const response = await provider.chat(req);
+      await completeCallTrace(trace, callId, response, Date.now() - startedAt);
+      return response;
     } catch (err) {
+      await failCallTrace(trace, callId, err, Date.now() - startedAt);
       lastErr = err;
       const retryable = err instanceof ProviderError ? err.retryable : true;
       if (!retryable || attempt === MAX_PROVIDER_RETRIES) break;
@@ -138,19 +260,29 @@ async function callWithRetry(provider: ModelProvider, req: Parameters<ModelProvi
  */
 export async function routerChat<T>(options: RouterChatOptions<T>): Promise<T> {
   await assertBudget(options.tenantId);
-  const provider = getProvider();
-  const model = defaultChatModel(options.light);
+  const settings = await getAiRuntimeSettings(options.tenantId, options.settingsOverride);
+  const provider = getProvider(settings.provider);
+  const model = defaultChatModel(settings, options.light);
 
   const baseReq = {
     model,
     messages: options.messages,
     json: true,
     promptKey: options.promptKey,
+    apiKey: settings.apiKey,
+    baseUrl: settings.baseUrl,
     ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
   };
 
   const start = Date.now();
-  let response = await callWithRetry(provider, baseReq);
+  const traceBase = options.agentRunId
+    ? { tenantId: options.tenantId, agentRunId: options.agentRunId }
+    : null;
+  let response = await callWithRetry(
+    provider,
+    baseReq,
+    traceBase ? { ...traceBase, phase: "primary" } : undefined,
+  );
   await recordUsage({
     tenantId: options.tenantId,
     agentRunId: options.agentRunId,
@@ -169,17 +301,21 @@ export async function routerChat<T>(options: RouterChatOptions<T>): Promise<T> {
 
   // 自修复一次：把校验错误回传给模型
   const repairStart = Date.now();
-  response = await callWithRetry(provider, {
-    ...baseReq,
-    messages: [
-      ...options.messages,
-      { role: "assistant" as const, content: response.content },
-      {
-        role: "user" as const,
-        content: `你上面的 JSON 输出未通过校验：${firstTry.error}。请严格按照要求的结构重新输出完整 JSON，不要输出任何额外文本。`,
-      },
-    ],
-  });
+  response = await callWithRetry(
+    provider,
+    {
+      ...baseReq,
+      messages: [
+        ...options.messages,
+        { role: "assistant" as const, content: response.content },
+        {
+          role: "user" as const,
+          content: `你上面的 JSON 输出未通过校验：${firstTry.error}。请严格按照要求的结构重新输出完整 JSON，不要输出任何额外文本。`,
+        },
+      ],
+    },
+    traceBase ? { ...traceBase, phase: "repair" } : undefined,
+  );
   await recordUsage({
     tenantId: options.tenantId,
     agentRunId: options.agentRunId,
@@ -221,12 +357,17 @@ export async function routerEmbed(
   tenantId: string,
   texts: string[],
   createdBy?: string | null,
+  settingsOverride?: AiRuntimeOverride,
 ): Promise<number[][]> {
   await assertBudget(tenantId);
-  const provider = getProvider();
-  const model = embeddingModel();
+  const settings = await getAiRuntimeSettings(tenantId, settingsOverride);
+  const provider = getProvider(settings.provider);
+  const model = embeddingModel(settings);
   const start = Date.now();
-  const { vectors, usage } = await provider.embed(texts, model);
+  const { vectors, usage } = await provider.embed(texts, model, {
+    apiKey: settings.apiKey,
+    baseUrl: settings.baseUrl,
+  });
   await recordUsage({
     tenantId,
     provider: provider.name,

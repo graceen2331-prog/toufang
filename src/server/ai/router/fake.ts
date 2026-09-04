@@ -3,52 +3,136 @@ import type { ChatRequest, ChatResponse, ModelProvider } from "./types";
 
 // 确定性假数据，按 promptKey 返回；测试/CI/演示用，不消耗 token
 const FIXTURES: Record<string, unknown> = {
+  "settings.test": {
+    ok: true,
+    message: "fake provider 已连通",
+  },
   "research.generate": {
     market_overview:
       "功效护肤赛道在双十一周期竞争激烈，成分党内容渗透率持续上升，短视频测评与图文成分解析是转化效率最高的两类内容形式。",
     trends: [
-      { title: "早C晚A 场景内容持续走热", detail: "组合护肤概念带动精华品类搜索，适合与达人共创使用教程类内容。" },
-      { title: "皮肤屏障科普红利", detail: "皮肤科医生/配方师人设达人的信任度显著高于普通测评号。" },
+      {
+        title: "早C晚A 场景内容持续走热",
+        detail: "组合护肤概念带动精华品类搜索，适合与达人共创使用教程类内容。",
+      },
+      {
+        title: "皮肤屏障科普红利",
+        detail: "皮肤科医生/配方师人设达人的信任度显著高于普通测评号。",
+      },
     ],
     competitor_insights: [
-      { competitor: "同价位竞品 A", insight: "以腰部达人矩阵铺量为主，头部投放少，评论区口碑维护较弱（推断）。" },
-      { competitor: "国际大牌 B", insight: "预算集中在超头直播间，中小达人内容空间留白，可差异化切入。" },
+      {
+        competitor: "同价位竞品 A",
+        insight: "以腰部达人矩阵铺量为主，头部投放少，评论区口碑维护较弱（推断）。",
+      },
+      {
+        competitor: "国际大牌 B",
+        insight: "预算集中在超头直播间，中小达人内容空间留白，可差异化切入。",
+      },
     ],
     content_opportunities: ["28 天打卡实测系列", "成分浓度对比横评", "敏感肌真人测试"],
     risks: [
-      { risk: "功效表述触碰广告法红线", severity: "high", mitigation: "Brief 明确禁用医疗功效词并要求初稿送审" },
+      {
+        risk: "功效表述触碰广告法红线",
+        severity: "high",
+        mitigation: "Brief 明确禁用医疗功效词并要求初稿送审",
+      },
       { risk: "大促期间达人档期紧张", severity: "medium", mitigation: "提前锁档 + 备选名单" },
     ],
-    recommendations: ["优先锁定 2 位皮肤科背景头部达人", "腰部达人按 1:3 备选比例外联", "为爆文准备投流放大预算"],
+    recommendations: [
+      "优先锁定 2 位皮肤科背景头部达人",
+      "腰部达人按 1:3 备选比例外联",
+      "为爆文准备投流放大预算",
+    ],
   },
   "discovery.match": {
     matches: [
-      { index: 0, match_score: 0.92, reasons: ["美妆护肤垂类高度契合", "互动率高于品类均值"], suggested_role: "hero", risk_notes: [] },
-      { index: 1, match_score: 0.85, reasons: ["成分党内容风格与品牌调性一致"], suggested_role: "amplifier", risk_notes: [] },
-      { index: 2, match_score: 0.78, reasons: ["受众年龄与目标人群重合度高"], suggested_role: "amplifier", risk_notes: ["近期数据波动较大"] },
-      { index: 3, match_score: 0.72, reasons: ["性价比高，适合批量种草"], suggested_role: "seeder", risk_notes: [] },
-      { index: 4, match_score: 0.65, reasons: ["内容质量稳定"], suggested_role: "seeder", risk_notes: [] },
+      {
+        index: 0,
+        match_score: 0.92,
+        reasons: ["美妆护肤垂类高度契合", "互动率高于品类均值"],
+        suggested_role: "hero",
+        risk_notes: [],
+      },
+      {
+        index: 1,
+        match_score: 0.85,
+        reasons: ["成分党内容风格与品牌调性一致"],
+        suggested_role: "amplifier",
+        risk_notes: [],
+      },
+      {
+        index: 2,
+        match_score: 0.78,
+        reasons: ["受众年龄与目标人群重合度高"],
+        suggested_role: "amplifier",
+        risk_notes: ["近期数据波动较大"],
+      },
+      {
+        index: 3,
+        match_score: 0.72,
+        reasons: ["性价比高，适合批量种草"],
+        suggested_role: "seeder",
+        risk_notes: [],
+      },
+      {
+        index: 4,
+        match_score: 0.65,
+        reasons: ["内容质量稳定"],
+        suggested_role: "seeder",
+        risk_notes: [],
+      },
     ],
   },
   "scoring.evaluate": {
     scores: [
       {
-        index: 0, overall_score: 88, tier: "S",
-        dimensions: { brand_fit: 92, audience_fit: 90, content_fit: 88, engagement: 85, cost_efficiency: 78, estimated_roi: 86 },
+        index: 0,
+        overall_score: 88,
+        tier: "S",
+        dimensions: {
+          brand_fit: 92,
+          audience_fit: 90,
+          content_fit: 88,
+          engagement: 85,
+          cost_efficiency: 78,
+          estimated_roi: 86,
+        },
         risk: { level: "low", flags: [] },
-        explanation: "垂类契合度与互动质量俱佳，建议作为头部背书优先锁定。", shortlist: true,
+        explanation: "垂类契合度与互动质量俱佳，建议作为头部背书优先锁定。",
+        shortlist: true,
       },
       {
-        index: 1, overall_score: 76, tier: "A",
-        dimensions: { brand_fit: 80, audience_fit: 78, content_fit: 82, engagement: 72, cost_efficiency: 75, estimated_roi: 70 },
+        index: 1,
+        overall_score: 76,
+        tier: "A",
+        dimensions: {
+          brand_fit: 80,
+          audience_fit: 78,
+          content_fit: 82,
+          engagement: 72,
+          cost_efficiency: 75,
+          estimated_roi: 70,
+        },
         risk: { level: "low", flags: [] },
-        explanation: "内容风格稳定，报价合理，适合作为腰部主力。", shortlist: true,
+        explanation: "内容风格稳定，报价合理，适合作为腰部主力。",
+        shortlist: true,
       },
       {
-        index: 2, overall_score: 62, tier: "B",
-        dimensions: { brand_fit: 70, audience_fit: 65, content_fit: 60, engagement: 55, cost_efficiency: 68, estimated_roi: 55 },
+        index: 2,
+        overall_score: 62,
+        tier: "B",
+        dimensions: {
+          brand_fit: 70,
+          audience_fit: 65,
+          content_fit: 60,
+          engagement: 55,
+          cost_efficiency: 68,
+          estimated_roi: 55,
+        },
         risk: { level: "medium", flags: ["近 30 天互动率下滑"] },
-        explanation: "数据近期波动，建议观察一周期或压价合作。", shortlist: false,
+        explanation: "数据近期波动，建议观察一周期或压价合作。",
+        shortlist: false,
       },
     ],
   },
@@ -86,8 +170,13 @@ const FIXTURES: Record<string, unknown> = {
       suggested_counter_cents: 6500000,
       walk_away_cents: 7200000,
     },
-    strategy: ["以长期合作意向换取单条价格让步", "将直播口播拆分为可选加购项单独计价", "承诺优质内容追加投流预算，放大达人曝光收益"],
-    reply_draft: "感谢报价与方案！我们内部对齐了一下：单条短视频这边预算上限在 6.5 万，不过我们非常认可你的内容质量，如果这次合作效果好，Q4 还有两个campaign会优先考虑长期合作。直播口播我们建议作为可选项单独谈。你看这个方案是否可以？",
+    strategy: [
+      "以长期合作意向换取单条价格让步",
+      "将直播口播拆分为可选加购项单独计价",
+      "承诺优质内容追加投流预算，放大达人曝光收益",
+    ],
+    reply_draft:
+      "感谢报价与方案！我们内部对齐了一下：单条短视频这边预算上限在 6.5 万，不过我们非常认可你的内容质量，如果这次合作效果好，Q4 还有两个campaign会优先考虑长期合作。直播口播我们建议作为可选项单独谈。你看这个方案是否可以？",
     required_approvals: ["若最终价超过 7.2 万需预算上调审批"],
     risk_notes: ["大促档期紧张，谈判周期不宜超过一周"],
   },
@@ -113,12 +202,36 @@ const FIXTURES: Record<string, unknown> = {
     creator_feedback:
       "整体内容方向契合成分实测，但含高风险表达；如人工确认已修改或风险可控，方可批准发布。",
   },
+  "content_review.rewrite": {
+    revised_caption:
+      "28 天温和提亮实测来了。光泽实验室焕亮维C精华用 15% VC 衍生物复配烟酰胺，主打温和提亮肤色。我会按早间护肤步骤连续记录肤感和肤色变化，结尾也放了双十一优惠入口，感兴趣可以点购物车看看。",
+    revised_transcript:
+      "这次测试的是光泽实验室焕亮维C精华。它的重点不是夸张承诺，而是用 15% VC 衍生物和烟酰胺做温和提亮护理。我会连续记录 28 天使用感受，包括质地、吸收、妆前叠加和肤色观感变化。敏感肌同学也建议先做局部测试。双十一期间购物车有专属优惠，大家可以按自己的肤质和预算理性选择。",
+    change_summary: [
+      "删除医疗化和绝对化表达，改为温和提亮与 28 天记录。",
+      "补充 Brief 要求的购物车优惠 CTA。",
+      "保留达人实测口吻，同时加入局部测试提醒。",
+    ],
+    creator_message: "已按审核意见改为更稳妥的功效表达，并补齐双十一优惠入口。",
+  },
   "analytics.analyze": {
     summary:
       "近 30 天内容曝光与互动保持增长，短视频内容贡献了主要观看量；当前转化数据仍不完整，ROI 判断需要谨慎。",
     kpi_status: [
-      { name: "曝光", status: "on_track", actual: 1280000, target: 1000000, note: "曝光已超过阶段目标。" },
-      { name: "转化", status: "unknown", actual: null, target: 1200, note: "缺少完整订单回传，暂不判断。" },
+      {
+        name: "曝光",
+        status: "on_track",
+        actual: 1280000,
+        target: 1000000,
+        note: "曝光已超过阶段目标。",
+      },
+      {
+        name: "转化",
+        status: "unknown",
+        actual: null,
+        target: 1200,
+        note: "缺少完整订单回传，暂不判断。",
+      },
     ],
     top_performers: [
       { entity_id: "content-top", reason: "短视频完播与互动均高于均值", metric: "views" },
@@ -150,7 +263,11 @@ const FIXTURES: Record<string, unknown> = {
     narrative:
       "事实：短视频内容贡献主要观看量，评论与收藏增长明显。推断：成分党叙事强化了信任，但购买 CTA 露出不足限制了点击转化。",
     key_learnings: ["成分实测内容更适合承担信任背书", "内容末尾 CTA 对点击表现影响明显"],
-    recommendations: ["复投高完播达人素材", "补齐订单回传后重新计算 ROI", "下一轮 Brief 强制加入购物车 CTA"],
+    recommendations: [
+      "复投高完播达人素材",
+      "补齐订单回传后重新计算 ROI",
+      "下一轮 Brief 强制加入购物车 CTA",
+    ],
     data_limitations: ["部分平台缺少收入与成本字段", "达人级归因仍有滞后"],
     requires_approval: true,
   },

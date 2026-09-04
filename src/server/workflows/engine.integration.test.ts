@@ -87,6 +87,25 @@ describe.skipIf(!hasInfra)("工作流引擎（集成）", () => {
     // AI 用量已记账
     const usage = await prisma.aiUsageEvent.count({ where: { tenantId: orgId } });
     expect(usage).toBeGreaterThan(0);
+
+    // Agent 监测链路保留 Prompt 快照与逐次模型调用
+    const agentRun = await prisma.agentRun.findFirst({
+      where: { tenantId: orgId, workflowRunId: run.id, agentKey: "strategy" },
+      include: { calls: { orderBy: { createdAt: "asc" } } },
+    });
+    expect(agentRun?.status).toBe("completed");
+    expect(agentRun?.promptSnapshot).toMatchObject({
+      system: expect.any(String),
+      user: expect.any(String),
+    });
+    expect(agentRun?.calls).toHaveLength(1);
+    expect(agentRun?.calls[0]).toMatchObject({
+      phase: "primary",
+      attempt: 1,
+      status: "completed",
+      provider: "fake",
+      model: "fake-model",
+    });
   });
 
   it("步骤幂等：completed 步骤重复执行是 no-op", async () => {

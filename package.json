@@ -19,6 +19,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
     "seed": "NODE_OPTIONS=--conditions=react-server tsx prisma/seed.ts",
+    "import:ces-brand-leads": "tsx scripts/import-ces-brand-leads.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

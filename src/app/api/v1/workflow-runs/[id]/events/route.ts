@@ -80,6 +80,23 @@ export async function GET(
         }
       });
 
+      // 补查订阅建立后的最新状态，封住“初始快照查询 → Redis 订阅”之间的竞态窗口。
+      const latest = await prisma.workflowRun.findFirst({
+        where: { id, tenantId: auth.orgId },
+        select: { status: true },
+      });
+      if (latest && latest.status !== run.status) {
+        send({
+          type: "run_status",
+          run_id: id,
+          status: latest.status,
+          at: new Date().toISOString(),
+        });
+        if (["completed", "failed", "cancelled"].includes(latest.status)) {
+          setTimeout(close, 500);
+        }
+      }
+
       heartbeat = setInterval(() => {
         send({ type: "heartbeat", run_id: id, at: new Date().toISOString() });
       }, 15_000);

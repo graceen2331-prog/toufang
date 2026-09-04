@@ -6,7 +6,7 @@
 pnpm test:integration
 ```
 
-该命令会为本次运行创建独立的 tmpfs PostgreSQL 与 Redis、执行真实迁移、强制使用 fake 模型，然后运行指定的 4 组数据库集成测试。它不会 seed 演示数据，也不会连接开发库。
+该命令会为本次运行创建独立的 tmpfs PostgreSQL 与 Redis、执行真实迁移、强制使用 fake 模型，然后运行指定的数据库集成测试。它不会 seed 演示数据，也不会连接开发库。
 
 ## 浏览器 E2E
 
