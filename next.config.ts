@@ -15,9 +15,14 @@ const securityHeaders = [
   ...(process.env.NODE_ENV === "production"
     ? [{ key: "Strict-Transport-Security", value: "max-age=15552000" }]
     : []),
+  ...(process.env.E2E_RUN_ID ? [{ key: "X-E2E-Run-Id", value: process.env.E2E_RUN_ID }] : []),
 ];
 
 const nextConfig: NextConfig = {
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  typescript: {
+    tsconfigPath: process.env.NEXT_TSCONFIG_PATH ?? "tsconfig.json",
+  },
   poweredByHeader: false,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

@@ -30,6 +30,38 @@ services:
       timeout: 3s
       retries: 10
 
+  # E2E runner 会为每次运行创建独立 Compose project，并在结束后精确销毁。
+  postgres-e2e:
+    profiles: ["e2e"]
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: toufang_e2e
+      POSTGRES_PASSWORD: toufang_e2e
+      POSTGRES_DB: toufang_e2e
+    ports:
+      - "127.0.0.1::5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U toufang_e2e -d toufang_e2e"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis-e2e:
+    profiles: ["e2e"]
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1::6379"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   postgres_data:
   redis_data:
