@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isEncrypted } from "@/server/lib/crypto";
 
-const hasInfra = !!process.env.DATABASE_URL;
+const hasInfra =
+  process.env.RUN_INTEGRATION_TESTS === "1" && Boolean(process.env.DATABASE_URL);
 
 describe.skipIf(!hasInfra)("付款申请与对账完整性（集成）", () => {
   let prisma: (typeof import("@/server/db/client"))["prisma"];

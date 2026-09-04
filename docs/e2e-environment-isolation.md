@@ -1,4 +1,14 @@
-# E2E 环境隔离
+# 自动化测试环境隔离
+
+常规 `pnpm test` 和 `pnpm check` 不会运行需要数据库的集成测试，即使本地 `.env` 配置了 `DATABASE_URL`。数据库集成测试必须通过显式隔离入口执行：
+
+```bash
+pnpm test:integration
+```
+
+该命令会为本次运行创建独立的 tmpfs PostgreSQL 与 Redis、执行真实迁移、强制使用 fake 模型，然后运行指定的 4 组数据库集成测试。它不会 seed 演示数据，也不会连接开发库。
+
+## 浏览器 E2E
 
 `pnpm e2e` 默认不会连接 `.env` 中的开发数据库和 Redis。Runner 会为每次执行创建唯一的 Docker Compose project，并使用以下隔离资源：
 
@@ -17,7 +27,7 @@ pnpm e2e e2e/dashboard-role-workspaces.spec.ts
 
 ## CI 外部隔离模式
 
-CI 可以提供每个 job 独享的连接：
+CI 可以为浏览器 E2E 或数据库集成测试提供每个 job 独享的连接：
 
 ```bash
 E2E_DATABASE_URL='postgresql://user:password@db/app_e2e' \
@@ -25,9 +35,17 @@ E2E_REDIS_URL='redis://cache:6379/2' \
 pnpm e2e
 ```
 
+数据库集成测试使用同一组隔离连接变量：
+
+```bash
+E2E_DATABASE_URL='postgresql://user:password@db/app_test' \
+E2E_REDIS_URL='redis://cache:6379/2' \
+pnpm test:integration
+```
+
 两个变量必须同时提供。数据库名必须包含独立的 `e2e` 或 `test` 标记，并且数据库、Redis 均不能与 `DATABASE_URL` / `REDIS_URL` 指向同一目标。Runner 比较目标时会忽略用户名、密码和查询参数，避免通过改写连接字符串绕过保护。
 
-外部模式默认只执行 `prisma migrate deploy` 和幂等 seed，不销毁外部资源。CI 应为每个 job 分配全新数据库和 Redis。只有外部资源明确可销毁时，才允许显式设置：
+外部模式默认只执行 `prisma migrate deploy`；浏览器 E2E 还会执行幂等 seed。Runner 不销毁外部资源，CI 应为每个 job 分配全新数据库和 Redis。只有浏览器 E2E 的外部资源明确可销毁时，才允许显式设置：
 
 ```bash
 E2E_RESET_DATABASE=1 pnpm e2e
