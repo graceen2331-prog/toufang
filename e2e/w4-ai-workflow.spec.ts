@@ -43,7 +43,9 @@ test.describe("AI 工作流", () => {
     await expect(card).toBeVisible({ timeout: 10_000 });
     await page.getByRole("button", { name: "批准" }).first().click();
     // ConfirmDialog 二次确认（按钮文案同为「批准」）
-    await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
+    const approveDialog = page.getByRole("dialog");
+    await approveDialog.getByPlaceholder("批准意见（至少 5 个字）").fill("已核对策略内容，可以继续执行");
+    await approveDialog.getByRole("button", { name: "确认批准" }).click();
     await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 10_000 });
 
     // 回到 Campaign 策略 Tab，策略版本已落库

@@ -1,4 +1,9 @@
-import type { PrismaClient } from "../src/generated/prisma/client";
+import type { Prisma, PrismaClient } from "../src/generated/prisma/client";
+import {
+  buildReportSnapshot,
+  hashReportSnapshot,
+  REPORT_HASH_ALGORITHM,
+} from "../src/server/modules/analytics/report-integrity";
 
 function daysAgo(days: number): Date {
   const date = new Date();
@@ -282,6 +287,71 @@ export async function seedContentAnalytics(
           requires_approval: true,
         },
         aiGenerated: false,
+        createdBy,
+      },
+    });
+  }
+
+  // 独立验收需要一份可导出、可派生的正式报告；保留草稿用于编辑流程演示。
+  const formalReportTitle = "焕亮维C精华阶段复盘正式版";
+  const existingFormalReport = await prisma.report.findFirst({
+    where: { tenantId, campaignId: campaign.id, title: formalReportTitle, deletedAt: null },
+  });
+  if (!existingFormalReport) {
+    const formalReportId = crypto.randomUUID();
+    const formalContent = {
+      executive_summary: "成分实测内容带动曝光增长，正式版本已完成合规复核。",
+      narrative: "事实：内容观看量稳步增长。推断：稳定的实测叙事更适合后续复投。",
+      key_learnings: ["成分实测适合作为信任背书", "禁用词需要在初稿阶段提前拦截"],
+      recommendations: ["复投已过审高完播内容", "补齐订单回传后复算 ROI"],
+      data_limitations: ["部分达人级收入归因滞后"],
+      requires_approval: true,
+    };
+    const snapshot = buildReportSnapshot({
+      id: formalReportId,
+      seriesId: formalReportId,
+      version: 1,
+      campaignId: campaign.id,
+      title: formalReportTitle,
+      kind: "campaign_retro",
+      content: formalContent,
+      aiGenerated: false,
+      agentRunId: null,
+      promptKey: null,
+      promptVersion: null,
+      model: null,
+    });
+    const snapshotHash = hashReportSnapshot(snapshot);
+    await prisma.report.create({
+      data: {
+        id: formalReportId,
+        tenantId,
+        seriesId: formalReportId,
+        campaignId: campaign.id,
+        title: formalReportTitle,
+        kind: "campaign_retro",
+        status: "exported",
+        content: formalContent,
+        approvedAt: new Date(),
+        approvedBy: createdBy,
+        approvedSnapshotHash: snapshotHash,
+        hashAlgorithm: REPORT_HASH_ALGORITHM,
+        aiGenerated: false,
+        createdBy,
+      },
+    });
+    await prisma.reportExport.create({
+      data: {
+        tenantId,
+        reportId: formalReportId,
+        reportVersion: 1,
+        format: "json_snapshot",
+        recipient: "内部存档",
+        purpose: "seed 正式报告演示",
+        snapshot: snapshot as unknown as Prisma.InputJsonValue,
+        snapshotHash,
+        hashAlgorithm: REPORT_HASH_ALGORITHM,
+        idempotencyKey: `seed-formal-report-${formalReportId}`,
         createdBy,
       },
     });

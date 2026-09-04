@@ -13,6 +13,7 @@ async function login(page: Page, email = "admin@demo.com") {
   }
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 15_000 });
 }
 
 async function createCampaign(page: Page, name: string): Promise<string> {
@@ -30,7 +31,9 @@ async function approveFirst(page: Page, titlePattern: RegExp, timeout = 45_000) 
   const card = page.locator("[data-slot=card]").filter({ hasText: titlePattern }).first();
   await expect(card).toBeVisible({ timeout });
   await card.getByRole("button", { name: "批准" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
+  const approveDialog = page.getByRole("dialog");
+  await approveDialog.getByPlaceholder("批准意见（至少 5 个字）").fill("已核对审批材料，可以继续执行");
+  await approveDialog.getByRole("button", { name: "确认批准" }).click();
   await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 15_000 });
 }
 
@@ -66,14 +69,17 @@ async function approveInlineFromCampaign(page: Page, titlePattern: RegExp, timeo
   const card = rail.locator("article").filter({ hasText: titlePattern }).first();
   await expect(card).toBeVisible({ timeout });
   await card.getByRole("button", { name: "批准" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
-  await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 15_000 });
+  const approveDialog = page.getByRole("dialog");
+  await approveDialog.getByPlaceholder("批准意见（至少 5 个字）").fill("已核对当前 Campaign 审批内容");
+  await approveDialog.getByRole("button", { name: "确认批准" }).click();
+  await expect(rail.getByText("当前 Campaign 暂无待处理事项")).toBeVisible({ timeout: 15_000 });
   await expect(page).toHaveURL(/\/campaigns\/[0-9a-f-]+/);
 }
 
-async function runCampaignWorkflow(page: Page, buttonIndex: number, approvalTitle: RegExp) {
+async function runCampaignWorkflow(page: Page, workflowTitle: string, approvalTitle: RegExp) {
   await page.getByRole("tab", { name: "达人 Pipeline" }).click();
-  await page.getByRole("button", { name: "运行" }).nth(buttonIndex).click();
+  const workflowCard = page.locator("[data-slot=card]").filter({ hasText: workflowTitle }).first();
+  await workflowCard.getByRole("button", { name: "运行" }).click();
   await waitForWorkflowApproval(page);
   await approveFirst(page, approvalTitle);
 }
@@ -82,7 +88,7 @@ async function transitionBrief(page: Page, targetLabel: string) {
   const briefPanel = page.getByLabel("Brief");
   await briefPanel.getByRole("button", { name: "推进状态" }).click();
   await page.getByRole("menuitem", { name: targetLabel }).click();
-  await expect(page.getByText("Brief 状态已更新")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("Brief 状态已更新").first()).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(targetLabel).first()).toBeVisible({ timeout: 10_000 });
 }
 
@@ -230,6 +236,9 @@ async function createContractAndPayment(page: Page, browser: Browser, campaignNa
   await approvePaymentAsFinance(browser, /付款审批/);
 
   await page.reload();
+  const contractRow = page.getByRole("row").filter({ hasText: campaignName }).first();
+  await expect(contractRow).toBeVisible({ timeout: 15_000 });
+  await contractRow.click();
   const approvedPayment = page.getByRole("row").filter({ hasText: "已批准" }).first();
   await expect(approvedPayment).toBeVisible({ timeout: 15_000 });
   await approvedPayment.getByRole("button").click();
@@ -367,12 +376,12 @@ test.describe("W9 最终验收", () => {
     await page.getByRole("tab", { name: "策略" }).click();
     await expect(page.getByText(/成分实证|策略 v/).first()).toBeVisible({ timeout: 30_000 });
 
-    await runCampaignWorkflow(page, 1, new RegExp(`达人候选名单确认：${campaignName}`));
+    await runCampaignWorkflow(page, "达人发现", new RegExp(`达人候选名单确认：${campaignName}`));
     await page.goto(campaignUrl);
     await page.getByRole("tab", { name: "达人 Pipeline" }).click();
     await expect(page.getByText("候选").first()).toBeVisible({ timeout: 20_000 });
 
-    await runCampaignWorkflow(page, 2, new RegExp(`达人入围名单审批：${campaignName}`));
+    await runCampaignWorkflow(page, "达人评分", new RegExp(`达人入围名单审批：${campaignName}`));
     await page.goto(campaignUrl);
     await page.getByRole("tab", { name: "达人 Pipeline" }).click();
     await expect(page.getByText("已入围").first()).toBeVisible({ timeout: 20_000 });
@@ -425,6 +434,7 @@ test.describe("W9 最终验收", () => {
     await page.getByRole("button", { name: /星澜传媒/ }).click();
     await page.getByRole("menuitem", { name: /北辰品牌部/ }).click();
     await expect(page.getByText("北辰品牌部")).toBeVisible({ timeout: 10_000 });
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 10_000 });
     await page.goto(`/campaigns?q=${encodeURIComponent(campaignName)}`);
     await expect(page.getByText("没有匹配的结果")).toBeVisible({ timeout: 15_000 });
   });

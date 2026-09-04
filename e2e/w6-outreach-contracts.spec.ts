@@ -51,7 +51,9 @@ test.describe("外联 / 谈判 / 合同", () => {
       .first();
     await expect(approvalCard).toBeVisible({ timeout: 10_000 });
     await page.getByRole("button", { name: "批准" }).first().click();
-    await page.getByRole("dialog").getByRole("button", { name: "批准" }).click();
+    const approveDialog = page.getByRole("dialog");
+    await approveDialog.getByPlaceholder("批准意见（至少 5 个字）").fill("已核对外联内容，可以发送");
+    await approveDialog.getByRole("button", { name: "确认批准" }).click();
     await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 10_000 });
   });
 
@@ -95,11 +97,11 @@ test.describe("外联 / 谈判 / 合同", () => {
 
   test("未签署合同不能登记付款", async ({ page }) => {
     await loginAsAdmin(page);
-    await page.goto("/contracts?status=sent");
+    await page.goto("/contracts?status=in_review");
 
-    const sentRow = page.getByRole("row").filter({ hasText: "已发送" }).first();
-    await expect(sentRow).toBeVisible({ timeout: 10_000 });
-    await sentRow.click();
+    const unsignedRow = page.getByRole("row").filter({ hasText: "审核中" }).first();
+    await expect(unsignedRow).toBeVisible({ timeout: 10_000 });
+    await unsignedRow.click();
 
     await expect(page.getByRole("button", { name: "登记付款" })).toBeDisabled();
     await expect(page.getByText("合同签署或生效后才能登记付款。")).toBeVisible();

@@ -40,7 +40,7 @@ test.describe("认证与品牌管理", () => {
     await page.getByLabel("密码").fill("demo1234");
     await page.getByRole("button", { name: "登录" }).click();
     await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "经营总览" })).toBeVisible();
 
     // 侧边栏进入品牌管理
     await page.getByRole("link", { name: "品牌与产品" }).click();

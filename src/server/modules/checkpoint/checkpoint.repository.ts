@@ -165,7 +165,8 @@ export const checkpointRepository = {
     const permissions = Array.isArray(membership.role.permissions)
       ? (membership.role.permissions as unknown[]).map(String)
       : [];
-    if (!permissions.includes("*") && !permissions.includes("approval:decide")) return false;
+    if (permissions.includes("*")) return true;
+    if (!permissions.includes("approval:decide")) return false;
     return !checkpoint.assigneeRole || checkpoint.assigneeRole === membership.role.key;
   },
 
