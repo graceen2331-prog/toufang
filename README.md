@@ -44,6 +44,8 @@ pnpm dev:worker   # 后台 Worker（工作流 / RAG / 通知）
 
 生产环境不得启用 `ENABLE_DEMO_LOGIN`。浏览器变更请求会校验 `Origin` / Fetch Metadata，因此反向代理必须保留这些标准请求头，并确保外部来源与 `APP_ORIGIN` 完全一致。
 
+部署平台可使用 `GET /api/health/live` 检查 Web 进程存活，使用 `GET /api/health/ready` 检查 PostgreSQL 与 Redis 是否就绪。两个端点无需登录、禁止缓存，且不会返回连接地址或底层错误详情。
+
 ## 上线准备
 
 功能分波完成不代表可以直接生产发布。部署拓扑、文件持久化、迁移/恢复、真实 AI、监控值守与 Go / No-Go 证据统一维护在 [`docs/production-launch-plan.md`](docs/production-launch-plan.md)。CI 会执行静态检查、生产构建、数据库集成测试和完整浏览器验收。
