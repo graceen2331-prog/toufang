@@ -4,6 +4,7 @@ import { config as loadDotenv } from "dotenv";
 import {
   assertSafeE2ETargets,
   createE2ERunId,
+  createIsolatedTestSecurityEnv,
   createRuntimeLayout,
   resolveE2EMode,
 } from "./lib/e2e-environment.mjs";
@@ -168,6 +169,7 @@ async function main() {
 
   const env = {
     ...process.env,
+    ...createIsolatedTestSecurityEnv(mode),
     DATABASE_URL: target.databaseUrl,
     REDIS_URL: target.redisUrl,
     QUEUE_PREFIX: runtime.queuePrefix,

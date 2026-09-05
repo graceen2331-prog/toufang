@@ -3,6 +3,7 @@ import {
   assertOwnedRuntimeDirectory,
   assertOwnedRuntimeTsconfig,
   assertSafeE2ETargets,
+  createIsolatedTestSecurityEnv,
   createRuntimeLayout,
   normalizeDatabaseTarget,
   normalizeRedisTarget,
@@ -96,5 +97,26 @@ describe("E2E 运行资源所有权", () => {
     expect(() =>
       assertOwnedRuntimeTsconfig("/workspace", "abc-123", "/workspace/tsconfig.json"),
     ).toThrow("拒绝清理");
+  });
+});
+
+describe("本地隔离测试密钥", () => {
+  it("为本地 Compose 生成三类互不复用的密钥", () => {
+    let index = 0;
+    const env = createIsolatedTestSecurityEnv(
+      "local-compose",
+      () => `test-secret-${++index}`.padEnd(32, "x"),
+    );
+    expect(Object.values(env)).toHaveLength(3);
+    expect(new Set(Object.values(env)).size).toBe(3);
+    expect(env).toEqual({
+      DATA_ENCRYPTION_KEY: "test-secret-1".padEnd(32, "x"),
+      PAYMENT_FINGERPRINT_KEY: "test-secret-2".padEnd(32, "x"),
+      AUTH_RATE_LIMIT_HMAC_KEY: "test-secret-3".padEnd(32, "x"),
+    });
+  });
+
+  it("外部隔离环境必须继续使用调用方提供的稳定密钥", () => {
+    expect(createIsolatedTestSecurityEnv("external")).toEqual({});
   });
 });

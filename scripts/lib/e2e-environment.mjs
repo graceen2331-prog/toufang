@@ -96,6 +96,22 @@ export function createE2ERunId(now = Date.now(), entropy = randomBytes(5).toStri
     .slice(0, 10)}`;
 }
 
+/**
+ * 本地隔离模式使用每次运行独立的测试密钥，避免依赖开发机 .env，且绝不复用生产密钥。
+ * 外部模式的数据会跨运行保留，必须由调用方显式提供稳定的测试环境密钥。
+ */
+export function createIsolatedTestSecurityEnv(
+  mode,
+  secretFactory = () => randomBytes(32).toString("base64"),
+) {
+  if (mode !== "local-compose") return {};
+  return {
+    DATA_ENCRYPTION_KEY: secretFactory(),
+    PAYMENT_FINGERPRINT_KEY: secretFactory(),
+    AUTH_RATE_LIMIT_HMAC_KEY: secretFactory(),
+  };
+}
+
 export function createRuntimeLayout(projectRoot, runId) {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(runId)) throw new Error("E2E runId 格式无效");
   const relativeDistDir = path.posix.join(".next-e2e", runId);
