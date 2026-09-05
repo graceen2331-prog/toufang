@@ -1,4 +1,10 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Browser,
+  type BrowserRuntimeGuard,
+  type Page,
+} from "./fixtures";
 
 async function login(page: Page, email: string) {
   await page.goto("/login");
@@ -21,11 +27,16 @@ async function openContract(page: Page, contractNumber: string) {
   await expect(page.getByRole("button", { name: "登记付款" })).toBeVisible({ timeout: 10_000 });
 }
 
-async function approveAsFinance(browser: Browser, approvalMarker: string) {
+async function approveAsFinance(
+  browser: Browser,
+  approvalMarker: string,
+  browserRuntimeGuard: BrowserRuntimeGuard,
+) {
   const context = await browser.newContext({
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
     locale: "zh-CN",
   });
+  browserRuntimeGuard.watchContext(context);
   const page = await context.newPage();
   await login(page, "finance@demo.com");
   await page.goto("/approvals");
@@ -41,7 +52,11 @@ async function approveAsFinance(browser: Browser, approvalMarker: string) {
   await context.close();
 }
 
-test("付款登记必须经过异人审批，并用对账证据完成付款", async ({ page, browser }) => {
+test("付款登记必须经过异人审批，并用对账证据完成付款", async ({
+  page,
+  browser,
+  browserRuntimeGuard,
+}) => {
   const suffix = Date.now().toString(36);
   await login(page, "admin@demo.com");
   const response = await page.request.get("/api/v1/contracts?status=signed&limit=100");
@@ -77,7 +92,7 @@ test("付款登记必须经过异人审批，并用对账证据完成付款", as
   await page.getByRole("dialog").getByRole("button", { name: "提交审批" }).click();
   await expect(page.getByText("付款状态已更新")).toBeVisible({ timeout: 10_000 });
 
-  await approveAsFinance(browser, `FP-${suffix}`);
+  await approveAsFinance(browser, `FP-${suffix}`, browserRuntimeGuard);
   await openContract(page, contract!.contract_number);
   paymentRow = page.getByRole("row").filter({ hasText: "已批准" }).first();
   await expect(paymentRow).toBeVisible({ timeout: 15_000 });

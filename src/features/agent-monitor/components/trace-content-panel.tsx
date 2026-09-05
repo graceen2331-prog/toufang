@@ -5,9 +5,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PermissionGate } from "@/components/shared/permission-gate";
 import type { AgentRunDetailDto } from "@/shared/schemas/agent-monitor";
 import { useAgentRunSensitive } from "../queries";
-import { HydratedPermissionGate } from "./hydrated-permission-gate";
 
 export function TraceContentPanel({ run }: { run: AgentRunDetailDto }) {
   const sensitive = useAgentRunSensitive();
@@ -28,7 +28,7 @@ export function TraceContentPanel({ run }: { run: AgentRunDetailDto }) {
             {sensitive.data ? "正在显示完整上下文，本次查看已写入审计日志" : "默认展示脱敏内容"}
           </p>
         </div>
-        <HydratedPermissionGate
+        <PermissionGate
           permission="admin:ai_trace"
           fallback={<span className="flex items-center gap-1.5 text-xs text-muted-foreground"><LockKeyhole className="size-3.5" />仅管理员可查看原文</span>}
         >
@@ -41,7 +41,7 @@ export function TraceContentPanel({ run }: { run: AgentRunDetailDto }) {
             <Eye className="size-3.5" />
             {sensitive.isPending ? "读取中…" : sensitive.data ? "已显示完整内容" : "查看完整内容"}
           </Button>
-        </HydratedPermissionGate>
+        </PermissionGate>
       </CardHeader>
       <CardContent className="p-5">
         {sensitive.isError && (

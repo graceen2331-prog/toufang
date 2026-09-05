@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // 冒烟 #1：登录 → 工作台 → 品牌 CRUD 全链路（对应 W1 验收）
 // 前置：pnpm seed 已执行、dev server 运行中（playwright.config 会自动拉起）

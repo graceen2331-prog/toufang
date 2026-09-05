@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 // 冒烟 #8：知识库 / RAG + Admin 权限门
 // 前置：pnpm seed；dev（MODEL_PROVIDER=fake）运行中。seed 文档已预生成向量，不依赖 worker。
@@ -18,6 +18,7 @@ test.describe("W8 知识库 / RAG", () => {
 
     await page.goto("/knowledge");
     await expect(page.getByRole("heading", { name: "知识库" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "上传知识" })).toBeVisible();
     await expect(page.getByText("GlowLab 双十一内容复盘知识卡")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("就绪").first()).toBeVisible();
 
@@ -33,6 +34,10 @@ test.describe("W8 知识库 / RAG", () => {
 
   test("viewer 访问组织成员页时看到权限拒绝态", async ({ page }) => {
     await login(page, "viewer@demo.com");
+
+    await page.goto("/knowledge");
+    await expect(page.getByRole("heading", { name: "知识库" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "上传知识" })).toHaveCount(0);
 
     await page.goto("/admin/users");
     await expect(page.getByRole("heading", { name: "组织成员" })).toBeVisible();

@@ -1,4 +1,10 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Browser,
+  type BrowserRuntimeGuard,
+  type Page,
+} from "./fixtures";
 
 async function login(page: Page, email = "admin@demo.com") {
   await page.goto("/login");
@@ -37,11 +43,16 @@ async function approveFirst(page: Page, titlePattern: RegExp, timeout = 45_000) 
   await expect(page.getByText("已批准").first()).toBeVisible({ timeout: 15_000 });
 }
 
-async function approvePaymentAsFinance(browser: Browser, titlePattern: RegExp) {
+async function approvePaymentAsFinance(
+  browser: Browser,
+  titlePattern: RegExp,
+  browserRuntimeGuard: BrowserRuntimeGuard,
+) {
   const context = await browser.newContext({
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
     locale: "zh-CN",
   });
+  browserRuntimeGuard.watchContext(context);
   const page = await context.newPage();
   await login(page, "finance@demo.com");
   await page.goto("/approvals");
@@ -182,7 +193,12 @@ async function completeOutreachAndNegotiation(page: Page, campaignName: string) 
   await expect(page.getByText("合作条款已确认")).toBeVisible({ timeout: 10_000 });
 }
 
-async function createContractAndPayment(page: Page, browser: Browser, campaignName: string) {
+async function createContractAndPayment(
+  page: Page,
+  browser: Browser,
+  campaignName: string,
+  browserRuntimeGuard: BrowserRuntimeGuard,
+) {
   await page.goto("/contracts");
   await page.getByRole("button", { name: "新建合同" }).click();
   let dialog = page.getByRole("dialog");
@@ -233,7 +249,7 @@ async function createContractAndPayment(page: Page, browser: Browser, campaignNa
   await page.getByRole("menuitem", { name: "待审批" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "提交审批" }).click();
   await expect(page.getByText("付款状态已更新")).toBeVisible({ timeout: 10_000 });
-  await approvePaymentAsFinance(browser, /付款审批/);
+  await approvePaymentAsFinance(browser, /付款审批/, browserRuntimeGuard);
 
   await page.reload();
   const contractRow = page.getByRole("row").filter({ hasText: campaignName }).first();
@@ -315,11 +331,12 @@ async function generateApproveAndExportReport(page: Page, campaignName: string) 
   await expect(page.getByText("正式 JSON 快照已生成并记录")).toBeVisible({ timeout: 10_000 });
 }
 
-async function assertViewerDenied(browser: Browser) {
+async function assertViewerDenied(browser: Browser, browserRuntimeGuard: BrowserRuntimeGuard) {
   const viewerContext = await browser.newContext({
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
     locale: "zh-CN",
   });
+  browserRuntimeGuard.watchContext(viewerContext);
   const viewerPage = await viewerContext.newPage();
   await login(viewerPage, "viewer@demo.com");
   await viewerPage.goto("/admin/users");
@@ -355,6 +372,7 @@ test.describe("W9 最终验收", () => {
   test("端到端演示剧本：Campaign → AI → 外联合同 → 内容指标 → 报告与横切验证", async ({
     page,
     browser,
+    browserRuntimeGuard,
   }) => {
     test.setTimeout(300_000);
     const suffix = Date.now().toString(36);
@@ -403,7 +421,7 @@ test.describe("W9 最终验收", () => {
     await transitionBrief(page, "已批准");
 
     await completeOutreachAndNegotiation(page, campaignName);
-    await createContractAndPayment(page, browser, campaignName);
+    await createContractAndPayment(page, browser, campaignName, browserRuntimeGuard);
     await submitReviewPublishAndMetric(page, campaignName, contentTitle);
     await generateApproveAndExportReport(page, campaignName);
 
@@ -429,7 +447,7 @@ test.describe("W9 最终验收", () => {
     await expect(page.getByRole("heading", { name: "审批中心" })).toBeVisible();
     await page.setViewportSize({ width: 1280, height: 900 });
 
-    await assertViewerDenied(browser);
+    await assertViewerDenied(browser, browserRuntimeGuard);
 
     await page.getByRole("button", { name: /星澜传媒/ }).click();
     await page.getByRole("menuitem", { name: /北辰品牌部/ }).click();

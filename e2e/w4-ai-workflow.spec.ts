@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 // 冒烟 #4：AI 基建——UI 生成策略 → SSE 进度 → 审批 → 策略落库（对应 W4 验收）
 // 前置：dev server + worker（MODEL_PROVIDER=fake）都在运行

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 // 冒烟 #3：Campaign 域——列表 / 创建 / 详情状态推进 / 达人管道 / 审批中心（对应 W3 验收）
 

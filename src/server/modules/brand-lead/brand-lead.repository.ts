@@ -43,11 +43,18 @@ export interface BrandLeadConversionData {
 
 const SERIALIZATION_RETRY_LIMIT = 3;
 
-function isSerializationConflict(error: unknown): boolean {
+export function isSerializationConflict(error: unknown): boolean {
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    return error.code === "P2034";
+    return (
+      error.code === "P2034" ||
+      error.meta?.code === "40001" ||
+      /40001|could not serialize access|serialization failure/i.test(error.message)
+    );
   }
-  return error instanceof Error && /40001|could not serialize access|serialization failure/i.test(error.message);
+  return (
+    error instanceof Error &&
+    /40001|could not serialize access|serialization failure/i.test(error.message)
+  );
 }
 
 async function withSerializableRetry<T>(
@@ -159,7 +166,7 @@ export const brandLeadRepository = {
     data: BrandLeadConversionData,
   ): Promise<BrandLeadConversionRecord | null> {
     return withSerializableRetry(async (tx) => {
-        const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
           SELECT "id"
           FROM "brand_leads"
           WHERE "id" = ${data.leadId}
@@ -167,102 +174,102 @@ export const brandLeadRepository = {
             AND "deleted_at" IS NULL
           FOR UPDATE
         `;
-        if (locked.length === 0) return null;
+      if (locked.length === 0) return null;
 
-        const lead = await tx.brandLead.findFirst({
-          where: { id: data.leadId, tenantId: ctx.orgId, deletedAt: null },
+      const lead = await tx.brandLead.findFirst({
+        where: { id: data.leadId, tenantId: ctx.orgId, deletedAt: null },
+      });
+      if (!lead) return null;
+
+      if (lead.convertedCampaignId) {
+        const campaign = await tx.campaign.findFirst({
+          where: { id: lead.convertedCampaignId, tenantId: ctx.orgId },
+          select: { id: true, name: true, brand: { select: { id: true, name: true } } },
         });
-        if (!lead) return null;
+        if (!campaign) throw new Error("品牌线索关联的 Campaign 不存在");
+        return {
+          lead,
+          brand: campaign.brand,
+          campaign: { id: campaign.id, name: campaign.name },
+          alreadyConverted: true,
+        };
+      }
 
-        if (lead.convertedCampaignId) {
-          const campaign = await tx.campaign.findFirst({
-            where: { id: lead.convertedCampaignId, tenantId: ctx.orgId },
-            select: { id: true, name: true, brand: { select: { id: true, name: true } } },
-          });
-          if (!campaign) throw new Error("品牌线索关联的 Campaign 不存在");
-          return {
-            lead,
-            brand: campaign.brand,
-            campaign: { id: campaign.id, name: campaign.name },
-            alreadyConverted: true,
-          };
-        }
-
-        const brand = data.existingBrandId
-          ? await tx.brand.findFirst({
-              where: { id: data.existingBrandId, tenantId: ctx.orgId, deletedAt: null },
+      const brand = data.existingBrandId
+        ? await tx.brand.findFirst({
+            where: { id: data.existingBrandId, tenantId: ctx.orgId, deletedAt: null },
+            select: { id: true, name: true },
+          })
+        : data.newBrand
+          ? await tx.brand.create({
+              data: {
+                tenantId: ctx.orgId,
+                createdBy: ctx.userId ?? null,
+                name: data.newBrand.name,
+                slug: data.newBrand.slug,
+                description: data.newBrand.description,
+                markets: data.newBrand.markets,
+              },
               select: { id: true, name: true },
             })
-          : data.newBrand
-            ? await tx.brand.create({
-                data: {
-                  tenantId: ctx.orgId,
-                  createdBy: ctx.userId ?? null,
-                  name: data.newBrand.name,
-                  slug: data.newBrand.slug,
-                  description: data.newBrand.description,
-                  markets: data.newBrand.markets,
-                },
-                select: { id: true, name: true },
-              })
-            : null;
-        if (!brand) return null;
+          : null;
+      if (!brand) return null;
 
-        const campaign = await tx.campaign.create({
-          data: {
-            tenantId: ctx.orgId,
-            brandId: brand.id,
-            name: data.campaign.name,
-            objective: data.campaign.objective,
-            markets: data.campaign.markets,
-            platforms: data.campaign.platforms,
-            goals: data.campaign.goals,
-            createdBy: ctx.userId ?? null,
-            ownerId: ctx.userId ?? null,
-          },
-          select: { id: true, name: true, status: true },
-        });
-        await recordStatusEvent(
-          {
-            tenantId: ctx.orgId,
-            entityType: "campaign",
-            entityId: campaign.id,
-            fromValue: null,
-            toValue: campaign.status,
-            actorId: ctx.userId ?? null,
-            metadata: { source: "brand_lead", brand_lead_id: lead.id },
-          },
-          tx,
-        );
+      const campaign = await tx.campaign.create({
+        data: {
+          tenantId: ctx.orgId,
+          brandId: brand.id,
+          name: data.campaign.name,
+          objective: data.campaign.objective,
+          markets: data.campaign.markets,
+          platforms: data.campaign.platforms,
+          goals: data.campaign.goals,
+          createdBy: ctx.userId ?? null,
+          ownerId: ctx.userId ?? null,
+        },
+        select: { id: true, name: true, status: true },
+      });
+      await recordStatusEvent(
+        {
+          tenantId: ctx.orgId,
+          entityType: "campaign",
+          entityId: campaign.id,
+          fromValue: null,
+          toValue: campaign.status,
+          actorId: ctx.userId ?? null,
+          metadata: { source: "brand_lead", brand_lead_id: lead.id },
+        },
+        tx,
+      );
 
-        const convertedAt = new Date();
-        const updated = await tx.brandLead.updateMany({
-          where: {
-            id: lead.id,
-            tenantId: ctx.orgId,
-            deletedAt: null,
-            convertedCampaignId: null,
-          },
-          data: {
-            convertedCampaignId: campaign.id,
-            convertedAt,
-            convertedById: ctx.userId ?? null,
-            updatedBy: ctx.userId ?? null,
-          },
-        });
-        if (updated.count !== 1) throw new Error("品牌线索转换发生并发冲突");
+      const convertedAt = new Date();
+      const updated = await tx.brandLead.updateMany({
+        where: {
+          id: lead.id,
+          tenantId: ctx.orgId,
+          deletedAt: null,
+          convertedCampaignId: null,
+        },
+        data: {
+          convertedCampaignId: campaign.id,
+          convertedAt,
+          convertedById: ctx.userId ?? null,
+          updatedBy: ctx.userId ?? null,
+        },
+      });
+      if (updated.count !== 1) throw new Error("品牌线索转换发生并发冲突");
 
-        return {
-          lead: {
-            ...lead,
-            convertedCampaignId: campaign.id,
-            convertedAt,
-            convertedById: ctx.userId ?? null,
-          },
-          brand,
-          campaign: { id: campaign.id, name: campaign.name },
-          alreadyConverted: false,
-        };
+      return {
+        lead: {
+          ...lead,
+          convertedCampaignId: campaign.id,
+          convertedAt,
+          convertedById: ctx.userId ?? null,
+        },
+        brand,
+        campaign: { id: campaign.id, name: campaign.name },
+        alreadyConverted: false,
+      };
     });
   },
 };

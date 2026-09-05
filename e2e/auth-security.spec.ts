@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext } from "@playwright/test";
+import { expect, test, type BrowserContext } from "./fixtures";
 
 test.describe("认证与生产安全基线", () => {
   test("响应包含安全头，跨源变更请求被拒绝", async ({ request, baseURL }) => {

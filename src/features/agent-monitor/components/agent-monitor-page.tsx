@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { Activity } from "lucide-react";
 import { AsyncBoundary } from "@/components/shared/async-boundary";
 import { PageHeader } from "@/components/shared/page-header";
+import { PermissionGate } from "@/components/shared/permission-gate";
 import { useCursorPagination, useUrlFilters } from "@/lib/list-state";
 import { AgentRunFilters } from "./agent-run-filters";
 import { AgentRunsTable } from "./agent-runs-table";
 import { InfrastructureHealth } from "./infrastructure-health";
-import { HydratedPermissionGate } from "./hydrated-permission-gate";
 import { MonitorOverview } from "./monitor-overview";
 import { useAgentMonitorSummary, useAgentRuns } from "../queries";
 
@@ -58,9 +58,9 @@ export function AgentMonitorPage() {
         {summary.data && <MonitorOverview summary={summary.data} />}
       </AsyncBoundary>
 
-      <HydratedPermissionGate permission="admin:ai_infrastructure">
+      <PermissionGate permission="admin:ai_infrastructure">
         <InfrastructureHealth />
-      </HydratedPermissionGate>
+      </PermissionGate>
 
       <section className="space-y-3" aria-labelledby="agent-runs-heading">
         <div className="flex items-end justify-between gap-4">

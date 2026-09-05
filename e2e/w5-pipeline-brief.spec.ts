@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 // 冒烟 #5：发现/评分/Brief 工作流 UI（对应 W5 验收）
 // 前置：dev + worker（MODEL_PROVIDER=fake）运行中

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 // 冒烟 #7：内容审核 + 数据分析
 // 前置：pnpm seed；dev + worker（MODEL_PROVIDER=fake）运行中

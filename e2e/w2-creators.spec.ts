@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // 冒烟 #2：达人域——列表筛选 / 详情 / 状态推进 / CRM 看板（对应 W2 验收）
 

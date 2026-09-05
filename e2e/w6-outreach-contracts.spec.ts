@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 // 冒烟 #6：外联/谈判/合同（对应 W6 验收）
 // 前置：dev（MODEL_PROVIDER=fake）+ 已 seed（含 W6 外联/合同演示数据）运行中

@@ -44,11 +44,17 @@ pnpm dev:worker   # 后台 Worker（工作流 / RAG / 通知）
 
 生产环境不得启用 `ENABLE_DEMO_LOGIN`。浏览器变更请求会校验 `Origin` / Fetch Metadata，因此反向代理必须保留这些标准请求头，并确保外部来源与 `APP_ORIGIN` 完全一致。
 
+## 上线准备
+
+功能分波完成不代表可以直接生产发布。部署拓扑、文件持久化、迁移/恢复、真实 AI、监控值守与 Go / No-Go 证据统一维护在 [`docs/production-launch-plan.md`](docs/production-launch-plan.md)。CI 会执行静态检查、生产构建、数据库集成测试和完整浏览器验收。
+
 ## 常用脚本
 
 | 命令                            | 说明                                                                                   |
 | ------------------------------- | -------------------------------------------------------------------------------------- |
 | `pnpm check`                    | typecheck + lint + 单元测试（CI 入口）                                                 |
+| `pnpm build`                    | 验证 Next.js 生产构建                                                                  |
+| `pnpm test:integration`         | 使用隔离 PostgreSQL / Redis 执行迁移与数据库集成测试                                   |
 | `pnpm test` / `pnpm test:watch` | Vitest 单元测试                                                                        |
 | `pnpm e2e`                      | Playwright 端到端测试（runner 会托管 Next dev + worker，并设置 `MODEL_PROVIDER=fake`） |
 | `pnpm db:migrate`               | 开发迁移                                                                               |
