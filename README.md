@@ -44,7 +44,7 @@ pnpm dev:worker   # 后台 Worker（工作流 / RAG / 通知）
 
 生产环境不得启用 `ENABLE_DEMO_LOGIN`。浏览器变更请求会校验 `Origin` / Fetch Metadata，因此反向代理必须保留这些标准请求头，并确保外部来源与 `APP_ORIGIN` 完全一致。
 
-部署平台可使用 `GET /api/health/live` 检查 Web 进程存活，使用 `GET /api/health/ready` 检查 PostgreSQL 与 Redis 是否就绪。两个端点无需登录、禁止缓存，且不会返回连接地址或底层错误详情。
+部署平台可使用 `GET /api/health/live` 检查 Web 进程存活，使用 `GET /api/health/ready` 检查 PostgreSQL 与 Redis 是否就绪。两个端点无需登录、禁止缓存，且不会返回连接地址或底层错误详情。就绪探针使用独立、限时、连接数有上限的依赖客户端，并合并并发探测，避免依赖故障时反向放大负载；Worker 状态应由部署平台独立监测，不计入 Web 就绪结果。
 
 ## 上线准备
 

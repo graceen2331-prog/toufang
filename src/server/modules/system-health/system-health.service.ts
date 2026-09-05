@@ -3,6 +3,7 @@ import "server-only";
 import { systemHealthRepository } from "./system-health.repository";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 2_000;
+const DEFAULT_CACHE_TTL_MS = 300;
 
 export type DependencyStatus = "ok" | "unavailable";
 
@@ -20,6 +21,7 @@ interface ReadinessDependencies {
   checkRedis: () => Promise<void>;
   now?: () => Date;
   timeoutMs?: number;
+  cacheTtlMs?: number;
 }
 
 async function settleWithin(check: () => Promise<void>, timeoutMs: number): Promise<DependencyStatus> {
@@ -46,21 +48,42 @@ export function getLivenessSnapshot(now: () => Date = () => new Date()) {
   };
 }
 
-export async function getReadinessSnapshot(
-  dependencies: ReadinessDependencies = {
-    checkDatabase: () => systemHealthRepository.checkDatabase(),
-    checkRedis: () => systemHealthRepository.checkRedis(),
-  },
-): Promise<ReadinessSnapshot> {
+export function createReadinessProbe(dependencies: ReadinessDependencies) {
   const timeoutMs = dependencies.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS;
-  const [database, redis] = await Promise.all([
-    settleWithin(dependencies.checkDatabase, timeoutMs),
-    settleWithin(dependencies.checkRedis, timeoutMs),
-  ]);
+  const cacheTtlMs = dependencies.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+  let inFlight: Promise<ReadinessSnapshot> | null = null;
+  let cached: { snapshot: ReadinessSnapshot; expiresAt: number } | null = null;
 
-  return {
-    status: database === "ok" && redis === "ok" ? "ok" : "unavailable",
-    checked_at: (dependencies.now ?? (() => new Date()))().toISOString(),
-    checks: { database, redis },
+  return async (): Promise<ReadinessSnapshot> => {
+    const startedAt = Date.now();
+    if (cached && startedAt < cached.expiresAt) return cached.snapshot;
+    if (inFlight) return inFlight;
+
+    inFlight = (async () => {
+      const [database, redis] = await Promise.all([
+        settleWithin(dependencies.checkDatabase, timeoutMs),
+        settleWithin(dependencies.checkRedis, timeoutMs),
+      ]);
+      const snapshot: ReadinessSnapshot = {
+        status: database === "ok" && redis === "ok" ? "ok" : "unavailable",
+        checked_at: (dependencies.now ?? (() => new Date()))().toISOString(),
+        checks: { database, redis },
+      };
+      cached = { snapshot, expiresAt: Date.now() + cacheTtlMs };
+      return snapshot;
+    })().finally(() => {
+      inFlight = null;
+    });
+
+    return inFlight;
   };
+}
+
+const readinessProbe = createReadinessProbe({
+  checkDatabase: () => systemHealthRepository.checkDatabase(),
+  checkRedis: () => systemHealthRepository.checkRedis(),
+});
+
+export function getReadinessSnapshot(): Promise<ReadinessSnapshot> {
+  return readinessProbe();
 }

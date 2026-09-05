@@ -29,7 +29,7 @@ W0–W11 的产品功能和自动化验收已经完成，项目处于“代码�
 
 以下事项必须先由部署环境负责人确定，不能用开发机 `docker-compose.yml` 直接替代：
 
-- [x] Web 提供无需登录的 `/api/health/live` 与 `/api/health/ready`，供部署平台执行存活和就绪探测。
+- [x] Web 提供无需登录的 `/api/health/live` 与 `/api/health/ready`，依赖检查使用专用有界资源并合并并发探测；Worker 健康独立监测。
 - [ ] Next.js Web 与 BullMQ Worker 作为两个可独立启动、重启和扩容的长期进程。
 - [ ] 使用受限网络内的生产 PostgreSQL（含 pgvector）与 Redis；明确连接上限、Redis 淘汰策略和持久化策略。
 - [ ] 明确文件存储方案。知识文档等不可再生业务文件必须使用对象存储或有备份的持久共享卷，不能依赖临时容器文件系统。
