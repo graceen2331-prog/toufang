@@ -89,13 +89,17 @@ export function LoginForm({ demoConfig }: { demoConfig: DemoLoginConfig | null }
                 {form.formState.errors.root.message}
               </p>
             )}
-            <Button
-              type="submit"
-              className="h-11 w-full text-sm"
-              disabled={!hydrated || login.isPending}
-            >
-              {login.isPending ? "登录中…" : "登录"}
-            </Button>
+            {hydrated ? (
+              <Button
+                type="submit"
+                className="h-11 w-full text-sm"
+                disabled={login.isPending}
+              >
+                {login.isPending ? "登录中…" : "登录"}
+              </Button>
+            ) : (
+              <div className="h-11 w-full" aria-hidden="true" />
+            )}
           </FieldGroup>
         </form>
 
