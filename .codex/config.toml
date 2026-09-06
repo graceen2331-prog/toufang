@@ -1,0 +1,10 @@
+# 默认由 Luna 执行日常代码库操作；项目需处于 trusted 状态才会加载本文件。
+model = "gpt-5.6-luna"
+model_reasoning_effort = "medium"
+
+[agents]
+enabled = true
+# 双模型流程采用顺序交接，避免多个写代理同时修改工作区。
+max_concurrent_threads_per_session = 1
+default_subagent_model = "gpt-5.6-luna"
+default_subagent_reasoning_effort = "medium"
