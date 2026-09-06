@@ -62,6 +62,7 @@ export function LoginForm({ demoConfig }: { demoConfig: DemoLoginConfig | null }
                 type="email"
                 autoComplete="email"
                 placeholder="you@company.com"
+                disabled={!hydrated}
                 aria-invalid={!!form.formState.errors.email}
                 className="h-11 bg-background px-3 text-sm"
                 {...form.register("email")}
@@ -76,6 +77,7 @@ export function LoginForm({ demoConfig }: { demoConfig: DemoLoginConfig | null }
                 id="password"
                 type="password"
                 autoComplete="current-password"
+                disabled={!hydrated}
                 aria-invalid={!!form.formState.errors.password}
                 className="h-11 bg-background px-3 text-sm"
                 {...form.register("password")}
@@ -119,6 +121,7 @@ export function LoginForm({ demoConfig }: { demoConfig: DemoLoginConfig | null }
                 <button
                   key={account.email}
                   type="button"
+                  disabled={!hydrated}
                   className="group grid gap-1 border border-border bg-background px-3 py-2 text-left transition hover:border-primary/40 hover:bg-accent/45 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 focus-visible:outline-none active:translate-y-px"
                   onClick={() => fillDemoAccount(account.email)}
                 >

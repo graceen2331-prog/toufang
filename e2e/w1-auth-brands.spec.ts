@@ -25,6 +25,33 @@ test.describe("认证与品牌管理", () => {
     await expect(page.getByLabel("邮箱")).toBeVisible();
   });
 
+  test("客户端水合完成前不会接收登录输入", async ({ page }) => {
+    let releaseScripts: () => void = () => undefined;
+    const scriptsReleased = new Promise<void>((resolve) => {
+      releaseScripts = resolve;
+    });
+    const scriptPattern = "**/_next/static/**/*.js";
+
+    await page.route(scriptPattern, async (route) => {
+      await scriptsReleased;
+      await route.continue();
+    });
+    await page.goto("/login", { waitUntil: "commit" });
+
+    const email = page.getByLabel("邮箱");
+    await expect(email).toBeDisabled();
+
+    const fillEmail = email.fill("viewer@demo.com");
+    setTimeout(releaseScripts, 100);
+    await fillEmail;
+    await page.unroute(scriptPattern);
+
+    await expect(email).toHaveValue("viewer@demo.com");
+    await page.getByLabel("密码").fill("demo1234");
+    await page.getByRole("button", { name: "登录" }).click();
+    await expect(page).toHaveURL(/\/dashboard/);
+  });
+
   test("错误密码提示错误", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel("邮箱").fill("admin@demo.com");
